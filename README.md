@@ -10,7 +10,7 @@ Aplicación web local para que los encargados organicen el equipo, consulten cu�
 
 - Inicio de sesión por cuenta con roles de administrador y personal.
 - Resumen de implementos disponibles, prestados y por revisar.
-- Administración de usuarios, implementos, categorías y códigos únicos opcionales. Solo administradores pueden gestionar cuentas, implementos y categorías; el personal puede consultar el inventario y registrar préstamos y devoluciones.
+- Administración de usuarios, implementos, categorías y códigos únicos opcionales. Se pueden agregar hasta 100 unidades en una sola operación; si se indica un código base, cada unidad recibe un sufijo consecutivo. Solo administradores pueden gestionar cuentas, implementos y categorías; el personal puede consultar el inventario y registrar préstamos y devoluciones.
 - Filtros por nombre, categoría y estado.
 - Registro de préstamos con persona y motivo, y registro de devoluciones.
 - Estados de disponible, en uso, mantenimiento y perdido; aviso de implementos perdidos.

@@ -403,26 +403,47 @@ async function handleApi(request, response, pathname) {
     const body = await readJson(request);
     const name = cleanText(body.name, 100);
     const code = cleanText(body.code, 50);
+    const quantity = body.quantity === undefined ? 1 : body.quantity;
     const category = store.categories.find((entry) => entry.id === body.categoryId);
     if (!name || !category) {
       sendJson(response, 400, { error: "Indica el nombre del implemento y una categoría válida." });
       return;
     }
-    if (code && store.items.some((item) => item.code.toLocaleLowerCase() === code.toLocaleLowerCase())) {
-      sendJson(response, 409, { error: "Ya existe un implemento con ese código." });
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
+      sendJson(response, 400, { error: "La cantidad debe ser un número entero entre 1 y 100." });
       return;
     }
-    const item = {
+    const codes = Array.from({ length: quantity }, (_, index) => {
+      if (!code) return "";
+      if (quantity === 1) return code;
+      const suffixWidth = Math.max(2, String(quantity).length);
+      const suffix = `-${String(index + 1).padStart(suffixWidth, "0")}`;
+      return `${code.slice(0, 50 - suffix.length)}${suffix}`;
+    });
+    const normalizedCodes = codes.filter(Boolean).map((value) => value.toLocaleLowerCase());
+    if (
+      new Set(normalizedCodes).size !== normalizedCodes.length ||
+      normalizedCodes.some((value) =>
+        store.items.some((item) => item.code.toLocaleLowerCase() === value),
+      )
+    ) {
+      sendJson(response, 409, { error: "Uno o más códigos ya existen en el inventario." });
+      return;
+    }
+    const items = codes.map((itemCode) => ({
       id: randomUUID(),
       name,
-      code,
+      code: itemCode,
       categoryId: category.id,
       status: "available",
       loan: null,
-    };
-    store.items.push(item);
+    }));
+    store.items.push(...items);
     await saveStore();
-    sendJson(response, 201, { item: publicItem(item) });
+    sendJson(response, 201, {
+      ...(quantity === 1 ? { item: publicItem(items[0]) } : {}),
+      items: items.map(publicItem),
+    });
     return;
   }
 

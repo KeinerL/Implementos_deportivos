@@ -176,6 +176,7 @@ td { border-top: 1px solid #f0f2f2; padding: 12px 16px; color: #61757d; font-siz
 .dialog-heading h2 { margin: 0; font: 700 19px Manrope, sans-serif; }
 .dialog-close { margin: -6px -8px 0 0; font-size: 23px; }
 .optional-label { margin-left: 4px; color: #9ba8ad; font-weight: 400; }
+.field-hint { margin: 5px 0 2px; color: #8b9a9f; font-size: 10px; line-height: 1.45; }
 .dialog-form textarea { resize: vertical; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 21px; }
 .toast { position: fixed; z-index: 5; right: 24px; bottom: 24px; max-width: min(400px, calc(100vw - 40px)); border-radius: 8px; padding: 12px 16px; color: white; background: #183f4a; box-shadow: var(--shadow); font-size: 11px; opacity: 0; pointer-events: none; transform: translateY(8px); transition: opacity .2s, transform .2s; }

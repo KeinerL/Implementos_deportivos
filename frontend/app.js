@@ -184,7 +184,7 @@ function renderInventory() {
     if (item.status === "borrowed") {
       actions = `<button class="small-action" type="button" data-action="return" data-id="${item.id}">Devolver</button>${appData.user.role === "admin" ? `<button class="small-action danger" type="button" data-action="status" data-status="lost" data-id="${item.id}">Reportar pérdida</button>` : ""}`;
     } else if (item.status === "available") {
-      actions = `<button class="small-action" type="button" data-action="checkout" data-id="${item.id}">Prestar</button>${appData.user.role === "admin" ? `<button class="small-action danger" type="button" data-action="delete" data-id="${item.id}">Eliminar</button>` : ""}`;
+      actions = `<button class="small-action" type="button" data-action="checkout" data-id="${item.id}">Prestar</button>${appData.user.role === "admin" ? `<button class="small-action" type="button" data-action="status" data-status="maintenance" data-id="${item.id}">Mantenimiento</button><button class="small-action danger" type="button" data-action="delete" data-id="${item.id}">Eliminar</button>` : ""}`;
     } else if (appData.user.role === "admin") {
       const nextLabel = item.status === "lost" ? "Marcar disponible" : "Habilitar";
       actions = `<button class="small-action" type="button" data-action="status" data-status="available" data-id="${item.id}">${nextLabel}</button><button class="small-action danger" type="button" data-action="delete" data-id="${item.id}">Eliminar</button>`;
@@ -296,12 +296,15 @@ async function handleAction(button) {
     await refreshData();
     notify("Devolución registrada.");
   } else if (action === "status" && item) {
+    const status = button.dataset.status;
     await api(`/api/items/${id}/status`, {
       method: "PATCH",
-      body: JSON.stringify({ status: button.dataset.status }),
+      body: JSON.stringify({ status }),
     });
     await refreshData();
-    notify("Estado del implemento actualizado.");
+    notify(status === "maintenance"
+      ? "Implemento enviado a mantenimiento."
+      : "Estado del implemento actualizado.");
   } else if (action === "delete" && item) {
     if (!confirm(`¿Eliminar "${item.name}" del inventario?`)) return;
     await api(`/api/items/${id}`, { method: "DELETE" });
@@ -361,11 +364,15 @@ document.querySelector("#item-form").addEventListener("submit", async (event) =>
         name: form.get("name"),
         categoryId: form.get("categoryId"),
         code: form.get("code"),
+        quantity: Number(form.get("quantity")),
       }),
     });
+    const quantity = Number(form.get("quantity"));
     document.querySelector("#item-dialog").close();
     await refreshData();
-    notify("Implemento agregado al inventario.");
+    notify(quantity === 1
+      ? "Implemento agregado al inventario."
+      : `${quantity} implementos agregados al inventario.`);
   } catch (error) {
     showError(document.querySelector("#item-error"), error.message);
   } finally {
