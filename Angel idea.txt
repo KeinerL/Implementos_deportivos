@@ -1,0 +1,16 @@
+PAG 1
+
+inicio de sesión
+(Mensaje de aviso de perdida de balón)
+
+PAG 2
+
+mostrar los balones y cosas deportivas disponibles
+
+(Sistema de filtros, Sistema de estado, Sistema gestion de productos, Sistema para detectar que usuario usa cada producto)
+
+PAG 3
+
+Dashboard para administrar productos
+
+(Gestionar productos, Gestionar categorías, agregar, quitar productos o categorías, ver gráficos de productos(usados, cuantos activos y disponibles))
