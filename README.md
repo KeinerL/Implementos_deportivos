@@ -6,22 +6,6 @@ Aplicación web local para que los encargados organicen el equipo, consulten cu�
 
 - Node.js 20 o posterior.
 
-## Iniciar el proyecto
-
-Abre una terminal en la carpeta del proyecto y ejecuta:
-
-```powershell
-npm start
-```
-
-Después visita <http://127.0.0.1:3000>. La primera vez, crea la cuenta del encargado principal. El registro inicial se cierra después de crearla.
-
-Para reiniciar el servidor automáticamente al editar archivos durante el desarrollo:
-
-```powershell
-npm run dev
-```
-
 ## Incluye
 
 - Inicio de sesión para encargados y cierre de sesión.
