@@ -8,9 +8,9 @@ Aplicación web local para que los encargados organicen el equipo, consulten cu�
 
 ## Incluye
 
-- Inicio de sesión para encargados y cierre de sesión.
+- Inicio de sesión por cuenta con roles de administrador y personal.
 - Resumen de implementos disponibles, prestados y por revisar.
-- Administración de implementos, categorías y códigos únicos opcionales.
+- Administración de usuarios, implementos, categorías y códigos únicos opcionales. Solo administradores pueden gestionar cuentas, implementos y categorías; el personal puede consultar el inventario y registrar préstamos y devoluciones.
 - Filtros por nombre, categoría y estado.
 - Registro de préstamos con persona y motivo, y registro de devoluciones.
 - Estados de disponible, en uso, mantenimiento y perdido; aviso de implementos perdidos.
@@ -18,7 +18,7 @@ Aplicación web local para que los encargados organicen el equipo, consulten cu�
 
 Cada registro representa un implemento físico individual. Si hay cinco balones, registra cada balón por separado para poder saber cuál tiene cada persona.
 
-La cuenta inicial se guarda con contraseña derivada mediante scrypt. Las sesiones usan una cookie HTTP-only y se mantienen mientras el servidor está ejecutándose; al reiniciar el servidor hay que volver a iniciar sesión. Para usar la aplicación por HTTPS, configura `SECURE_COOKIES=true`.
+La primera cuenta creada durante la configuración inicial tiene el rol de administrador. Las cuentas nuevas se crean desde la sección «Usuarios» y pueden tener rol de personal o administrador. Los registros de usuario antiguos sin rol se consideran administradores para conservar el acceso tras la actualización. Las contraseñas se guardan derivadas mediante scrypt. Las sesiones usan una cookie HTTP-only y se mantienen mientras el servidor está ejecutándose; al reiniciar el servidor hay que volver a iniciar sesión. Para usar la aplicación por HTTPS, configura `SECURE_COOKIES=true`.
 
 ## Estructura
 

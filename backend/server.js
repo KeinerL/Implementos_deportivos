@@ -153,7 +153,12 @@ function cleanText(value, maxLength = 120) {
 }
 
 function safeUser(user) {
-  return { username: user.username };
+  return {
+    username: user.username,
+    role: user.role === "admin" || user.role === "staff"
+      ? user.role
+      : user.role == null ? "admin" : "staff",
+  };
 }
 
 async function hashPassword(password, salt = randomBytes(16).toString("hex")) {
@@ -227,7 +232,7 @@ async function handleApi(request, response, pathname) {
       sendJson(response, 409, { error: "La configuración inicial ya se completó." });
       return;
     }
-    store.users.push({ username, ...credentials });
+    store.users.push({ username, role: "admin", ...credentials });
     await saveStore();
     const token = randomBytes(32).toString("hex");
     sessions.set(token, { username, expiresAt: Date.now() + SESSION_TTL_MS });
@@ -271,17 +276,87 @@ async function handleApi(request, response, pathname) {
 
   const session = requireSession(request, response);
   if (!session) return;
+  const currentUser = store.users.find((user) => user.username === session.username);
+  if (!currentUser) {
+    sendJson(response, 401, { error: "La sesión ya no es válida. Inicia sesión de nuevo." });
+    return;
+  }
+  const isAdmin = safeUser(currentUser).role === "admin";
 
   if (request.method === "GET" && pathname === "/api/data") {
     sendJson(response, 200, {
-      user: { username: session.username },
+      user: safeUser(currentUser),
       categories: store.categories,
       items: store.items.map(publicItem),
+      users: isAdmin ? store.users.map(safeUser) : [],
     });
     return;
   }
 
+  if (request.method === "POST" && pathname === "/api/users") {
+    if (!isAdmin) {
+      sendJson(response, 403, { error: "Solo un administrador puede gestionar usuarios." });
+      return;
+    }
+    const body = await readJson(request);
+    const username = cleanText(body.username, 40);
+    const password = typeof body.password === "string" ? body.password : "";
+    const role = body.role;
+    if (!/^[\p{L}\p{N}_.-]{3,40}$/u.test(username)) {
+      sendJson(response, 400, {
+        error: "El usuario debe tener entre 3 y 40 letras, números, puntos, guiones o guiones bajos.",
+      });
+      return;
+    }
+    if (password.length < 10 || password.length > 200) {
+      sendJson(response, 400, { error: "La contraseña debe tener entre 10 y 200 caracteres." });
+      return;
+    }
+    if (role !== "admin" && role !== "staff") {
+      sendJson(response, 400, { error: "Selecciona un rol válido." });
+      return;
+    }
+    if (store.users.some((user) => user.username.toLocaleLowerCase() === username.toLocaleLowerCase())) {
+      sendJson(response, 409, { error: "Ya existe un usuario con ese nombre." });
+      return;
+    }
+    const credentials = await hashPassword(password);
+    const user = { username, role, ...credentials };
+    store.users.push(user);
+    await saveStore();
+    sendJson(response, 201, { user: safeUser(user) });
+    return;
+  }
+
+  if (request.method === "DELETE" && pathname === "/api/users") {
+    if (!isAdmin) {
+      sendJson(response, 403, { error: "Solo un administrador puede gestionar usuarios." });
+      return;
+    }
+    const body = await readJson(request);
+    const username = cleanText(body.username, 40);
+    if (username.toLocaleLowerCase() === currentUser.username.toLocaleLowerCase()) {
+      sendJson(response, 409, { error: "No puedes eliminar tu propia cuenta." });
+      return;
+    }
+    const user = store.users.find(
+      (entry) => entry.username.toLocaleLowerCase() === username.toLocaleLowerCase(),
+    );
+    if (!user) {
+      sendJson(response, 404, { error: "No se encontró el usuario." });
+      return;
+    }
+    store.users = store.users.filter((entry) => entry !== user);
+    await saveStore();
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
   if (request.method === "POST" && pathname === "/api/categories") {
+    if (!isAdmin) {
+      sendJson(response, 403, { error: "Solo un administrador puede gestionar categorías." });
+      return;
+    }
     const body = await readJson(request);
     const name = cleanText(body.name, 60);
     if (!name) {
@@ -301,6 +376,10 @@ async function handleApi(request, response, pathname) {
 
   const categoryMatch = pathname.match(/^\/api\/categories\/([0-9a-f-]+)$/i);
   if (request.method === "DELETE" && categoryMatch) {
+    if (!isAdmin) {
+      sendJson(response, 403, { error: "Solo un administrador puede gestionar categorías." });
+      return;
+    }
     const category = store.categories.find((entry) => entry.id === categoryMatch[1]);
     if (!category) {
       sendJson(response, 404, { error: "No se encontró la categoría." });
@@ -317,6 +396,10 @@ async function handleApi(request, response, pathname) {
   }
 
   if (request.method === "POST" && pathname === "/api/items") {
+    if (!isAdmin) {
+      sendJson(response, 403, { error: "Solo un administrador puede agregar implementos." });
+      return;
+    }
     const body = await readJson(request);
     const name = cleanText(body.name, 100);
     const code = cleanText(body.code, 50);
@@ -345,6 +428,10 @@ async function handleApi(request, response, pathname) {
 
   const itemMatch = pathname.match(/^\/api\/items\/([0-9a-f-]+)$/i);
   if (request.method === "DELETE" && itemMatch) {
+    if (!isAdmin) {
+      sendJson(response, 403, { error: "Solo un administrador puede eliminar implementos." });
+      return;
+    }
     const item = store.items.find((entry) => entry.id === itemMatch[1]);
     if (!item) {
       sendJson(response, 404, { error: "No se encontró el implemento." });
@@ -368,6 +455,10 @@ async function handleApi(request, response, pathname) {
       return;
     }
     const action = itemActionMatch[2];
+    if (action === "status" && !isAdmin) {
+      sendJson(response, 403, { error: "Solo un administrador puede cambiar el estado del inventario." });
+      return;
+    }
     const body = await readJson(request);
 
     if (action === "checkout") {

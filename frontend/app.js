@@ -11,7 +11,7 @@ const setupNote = document.querySelector("#setup-note");
 const toast = document.querySelector("#toast");
 
 let setupRequired = false;
-let appData = { user: null, categories: [], items: [] };
+let appData = { user: null, categories: [], items: [], users: [] };
 let activeView = "dashboard";
 let toastTimer;
 
@@ -74,6 +74,12 @@ async function refreshData() {
   appData = await api("/api/data");
   document.querySelector("#user-name").textContent = appData.user.username;
   document.querySelector("#user-avatar").textContent = appData.user.username.charAt(0);
+  document.querySelector("#user-role").textContent =
+    appData.user.role === "admin" ? "Administrador" : "Personal";
+  for (const element of document.querySelectorAll(".admin-only")) {
+    element.classList.toggle("hidden", appData.user.role !== "admin");
+  }
+  setView(activeView);
   render();
 }
 
@@ -92,6 +98,11 @@ function showApp() {
 function showAuth() {
   appScreen.classList.add("hidden");
   authScreen.classList.remove("hidden");
+  appData = { user: null, categories: [], items: [], users: [] };
+  activeView = "dashboard";
+  for (const element of document.querySelectorAll(".admin-only")) {
+    element.classList.add("hidden");
+  }
   authForm.reset();
   setAuthMode(setupRequired);
 }
@@ -150,7 +161,7 @@ function renderDashboard() {
       const borrowedWidth = count ? Math.round((borrowedCount / count) * 100) : 0;
       return `<div class="category-card"><div class="category-card-top"><span class="category-mark">◇</span><div><strong>${escapeHtml(category.name)}</strong><span>${count} ${count === 1 ? "implemento" : "implementos"}</span></div></div><div class="category-meter" aria-label="${availableCount} disponibles y ${borrowedCount} en uso"><span class="meter-available" style="width:${availableWidth}%"></span><span class="meter-borrowed" style="width:${borrowedWidth}%"></span></div></div>`;
     }).join("")
-    : '<div class="empty-inline">Agrega categorías para organizar tus implementos.</div>';
+    : '<div class="empty-inline">Aún no hay categorías configuradas.</div>';
 }
 
 function renderInventory() {
@@ -169,12 +180,12 @@ function renderInventory() {
     const details = loan
       ? `<div class="loan-cell"><strong>${escapeHtml(loan.person)}</strong><span>${escapeHtml(loan.reason)}</span></div>`
       : '<span class="muted">—</span>';
-    let actions;
+    let actions = '<span class="muted">—</span>';
     if (item.status === "borrowed") {
-      actions = `<button class="small-action" type="button" data-action="return" data-id="${item.id}">Devolver</button><button class="small-action danger" type="button" data-action="status" data-status="lost" data-id="${item.id}">Reportar pérdida</button>`;
+      actions = `<button class="small-action" type="button" data-action="return" data-id="${item.id}">Devolver</button>${appData.user.role === "admin" ? `<button class="small-action danger" type="button" data-action="status" data-status="lost" data-id="${item.id}">Reportar pérdida</button>` : ""}`;
     } else if (item.status === "available") {
-      actions = `<button class="small-action" type="button" data-action="checkout" data-id="${item.id}">Prestar</button><button class="small-action danger" type="button" data-action="delete" data-id="${item.id}">Eliminar</button>`;
-    } else {
+      actions = `<button class="small-action" type="button" data-action="checkout" data-id="${item.id}">Prestar</button>${appData.user.role === "admin" ? `<button class="small-action danger" type="button" data-action="delete" data-id="${item.id}">Eliminar</button>` : ""}`;
+    } else if (appData.user.role === "admin") {
       const nextLabel = item.status === "lost" ? "Marcar disponible" : "Habilitar";
       actions = `<button class="small-action" type="button" data-action="status" data-status="available" data-id="${item.id}">${nextLabel}</button><button class="small-action danger" type="button" data-action="delete" data-id="${item.id}">Eliminar</button>`;
     }
@@ -187,6 +198,9 @@ function renderInventory() {
     </tr>`;
   }).join("");
   document.querySelector("#inventory-empty").classList.toggle("hidden", items.length > 0);
+  document.querySelector("#inventory-empty p").textContent = appData.user.role === "admin"
+    ? "Agrega un implemento o cambia los filtros de búsqueda."
+    : "Prueba cambiar los filtros de búsqueda.";
   document.querySelector(".table-wrap table").classList.toggle("hidden", items.length === 0);
 }
 
@@ -194,9 +208,24 @@ function renderCategories() {
   document.querySelector("#category-list").innerHTML = appData.categories.length
     ? appData.categories.map((category) => {
       const count = appData.items.filter((item) => item.categoryId === category.id).length;
-      return `<div class="category-list-row"><span class="category-mark">◇</span><strong>${escapeHtml(category.name)}</strong><span>${count} ${count === 1 ? "implemento" : "implementos"}</span><button class="delete-category" type="button" data-action="delete-category" data-id="${category.id}">Eliminar</button></div>`;
+      const deleteButton = appData.user.role === "admin"
+        ? `<button class="delete-category" type="button" data-action="delete-category" data-id="${category.id}">Eliminar</button>`
+        : "";
+      return `<div class="category-list-row"><span class="category-mark">◇</span><strong>${escapeHtml(category.name)}</strong><span>${count} ${count === 1 ? "implemento" : "implementos"}</span>${deleteButton}</div>`;
     }).join("")
     : '<div class="empty-inline">Aún no tienes categorías. Agrega una para organizar el inventario.</div>';
+}
+
+function renderUsers() {
+  const users = Array.isArray(appData.users) ? appData.users : [];
+  document.querySelector("#user-list").innerHTML = users.map((user) => `
+    <div class="category-list-row">
+      <span class="category-mark">♙</span>
+      <strong>${escapeHtml(user.username)}${user.username === appData.user.username ? " (tú)" : ""}</strong>
+      <span>${user.role === "admin" ? "Administrador" : "Personal"}</span>
+      ${user.username === appData.user.username ? "" : `<button class="delete-category" type="button" data-action="delete-user" data-username="${escapeHtml(user.username)}">Eliminar</button>`}
+    </div>
+  `).join("");
 }
 
 function renderFilters() {
@@ -218,9 +247,12 @@ function render() {
   renderDashboard();
   renderInventory();
   renderCategories();
+  renderUsers();
 }
 
 function setView(view) {
+  if (view === "users" && appData.user?.role !== "admin") view = "dashboard";
+  if (view === "categories" && appData.user?.role !== "admin") view = "dashboard";
   activeView = view;
   for (const section of document.querySelectorAll(".view")) {
     section.classList.toggle("hidden", section.id !== `view-${view}`);
@@ -228,12 +260,15 @@ function setView(view) {
   for (const button of document.querySelectorAll(".nav-link")) {
     button.classList.toggle("active", button.dataset.view === view);
   }
-  const titles = { dashboard: "Resumen", inventory: "Implementos", categories: "Categorías" };
+  const titles = { dashboard: "Resumen", inventory: "Implementos", categories: "Categorías", users: "Usuarios" };
   document.querySelector("#page-title").textContent = titles[view];
   document.querySelector("#page-eyebrow").textContent = view === "dashboard"
     ? "TU ESPACIO DEPORTIVO"
     : "GESTIÓN DE INVENTARIO";
-  document.querySelector(".topbar-action").classList.toggle("hidden", view === "categories");
+  document.querySelector(".topbar-action").classList.toggle(
+    "hidden",
+    appData.user?.role !== "admin" || !["dashboard", "inventory"].includes(view),
+  );
 }
 
 async function handleAction(button) {
@@ -278,6 +313,15 @@ async function handleAction(button) {
     await api(`/api/categories/${id}`, { method: "DELETE" });
     await refreshData();
     notify("Categoría eliminada.");
+  } else if (action === "delete-user") {
+    const username = button.dataset.username;
+    if (!username || !confirm(`¿Eliminar la cuenta de "${username}"?`)) return;
+    await api("/api/users", {
+      method: "DELETE",
+      body: JSON.stringify({ username }),
+    });
+    await refreshData();
+    notify("Cuenta eliminada.");
   }
 }
 
@@ -366,12 +410,42 @@ document.querySelector("#category-form").addEventListener("submit", async (event
   }
 });
 
+document.querySelector("#user-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const submit = event.currentTarget.querySelector('[type="submit"]');
+  submit.disabled = true;
+  hideError(document.querySelector("#user-error"));
+  try {
+    await api("/api/users", {
+      method: "POST",
+      body: JSON.stringify({
+        username: form.get("username"),
+        password: form.get("password"),
+        role: form.get("role"),
+      }),
+    });
+    event.currentTarget.reset();
+    await refreshData();
+    notify("Cuenta creada correctamente.");
+  } catch (error) {
+    showError(document.querySelector("#user-error"), error.message);
+  } finally {
+    submit.disabled = false;
+  }
+});
+
 document.querySelector("#logout-button").addEventListener("click", async () => {
+  const button = document.querySelector("#logout-button");
+  button.disabled = true;
   try {
     await api("/api/logout", { method: "POST" });
     showAuth();
+    notify("Sesión cerrada correctamente.");
   } catch (error) {
     notify(error.message, true);
+  } finally {
+    button.disabled = false;
   }
 });
 

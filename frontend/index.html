@@ -52,14 +52,14 @@
         <nav class="main-nav" aria-label="Navegación principal">
           <button class="nav-link active" type="button" data-view="dashboard"><span aria-hidden="true">▦</span> Resumen</button>
           <button class="nav-link" type="button" data-view="inventory"><span aria-hidden="true">◫</span> Implementos</button>
-          <button class="nav-link" type="button" data-view="categories"><span aria-hidden="true">◇</span> Categorías</button>
+          <button class="nav-link admin-only hidden" type="button" data-view="categories"><span aria-hidden="true">◇</span> Categorías</button>
+          <button class="nav-link admin-only hidden" type="button" data-view="users"><span aria-hidden="true">♙</span> Usuarios</button>
         </nav>
         <div class="sidebar-bottom">
           <div class="sidebar-help"><span class="help-dot"></span><span>Inventario al día,<br>equipo listo para jugar.</span></div>
           <div class="user-panel">
             <span class="avatar" id="user-avatar">E</span>
-            <span class="user-name" id="user-name">Encargado</span>
-            <button id="logout-button" class="icon-button logout-button" type="button" aria-label="Cerrar sesión" title="Cerrar sesión">↗</button>
+            <span class="user-identity"><span class="user-name" id="user-name">Encargado</span><span class="user-role" id="user-role"></span></span>
           </div>
         </div>
       </aside>
@@ -70,7 +70,10 @@
             <p id="page-eyebrow" class="eyebrow">TU ESPACIO DEPORTIVO</p>
             <h1 id="page-title">Resumen</h1>
           </div>
-          <button class="button button-primary topbar-action" type="button" data-action="add-item"><span aria-hidden="true">＋</span> Agregar implemento</button>
+          <div class="topbar-actions">
+            <button id="logout-button" class="button button-secondary logout-button" type="button"><span aria-hidden="true">↪</span> Cerrar sesión</button>
+            <button class="button button-primary topbar-action admin-only hidden" type="button" data-action="add-item"><span aria-hidden="true">＋</span> Agregar implemento</button>
+          </div>
         </header>
 
         <section id="view-dashboard" class="view">
@@ -90,7 +93,7 @@
             <div id="recent-loans" class="loan-list"></div>
           </section>
           <section class="panel category-summary-panel">
-            <div class="panel-heading"><div><p class="eyebrow">ORGANIZACIÓN</p><h2>Implementos por categoría</h2></div><button class="text-button" type="button" data-view="categories">Gestionar categorías →</button></div>
+            <div class="panel-heading"><div><p class="eyebrow">ORGANIZACIÓN</p><h2>Implementos por categoría</h2></div><button class="text-button admin-only hidden" type="button" data-view="categories">Gestionar categorías →</button></div>
             <div id="category-summary" class="category-summary"></div>
           </section>
         </section>
@@ -108,7 +111,7 @@
                 <thead><tr><th>IMPLEMENTO</th><th>CATEGORÍA</th><th>ESTADO</th><th>PERSONA / MOTIVO</th><th>ACCIONES</th></tr></thead>
                 <tbody id="inventory-body"></tbody>
               </table>
-              <div id="inventory-empty" class="empty-state hidden"><span class="empty-icon">◫</span><h3>No hay implementos para mostrar</h3><p>Agrega un implemento o cambia los filtros de búsqueda.</p><button class="button button-primary" type="button" data-action="add-item">Agregar implemento</button></div>
+              <div id="inventory-empty" class="empty-state hidden"><span class="empty-icon">◫</span><h3>No hay implementos para mostrar</h3><p>Agrega un implemento o cambia los filtros de búsqueda.</p><button class="button button-primary admin-only hidden" type="button" data-action="add-item">Agregar implemento</button></div>
             </div>
           </section>
         </section>
@@ -117,12 +120,33 @@
           <div class="page-intro"><p>Organiza tus implementos para encontrarlos fácilmente.</p></div>
           <section class="panel category-panel">
             <div class="panel-heading"><div><p class="eyebrow">ORGANIZACIÓN</p><h2>Tus categorías</h2></div></div>
-            <form id="category-form" class="inline-form">
+            <form id="category-form" class="inline-form admin-only hidden">
               <label class="sr-only" for="category-name">Nombre de la categoría</label>
               <input id="category-name" name="name" placeholder="Ej. Balones, Conos, Redes..." required maxlength="60">
               <button class="button button-primary" type="submit">＋ Agregar categoría</button>
             </form>
             <div id="category-list" class="category-list"></div>
+          </section>
+        </section>
+
+        <section id="view-users" class="view hidden">
+          <div class="page-intro"><p>Crea cuentas para el personal y define qué permisos tendrá cada persona.</p></div>
+          <section class="panel category-panel">
+            <div class="panel-heading"><div><p class="eyebrow">ACCESO</p><h2>Cuentas del equipo</h2></div></div>
+            <form id="user-form" class="inline-form user-form">
+              <label class="sr-only" for="new-user-name">Nombre de usuario</label>
+              <input id="new-user-name" name="username" placeholder="Nombre de usuario" required minlength="3" maxlength="40" autocomplete="off">
+              <label class="sr-only" for="new-user-password">Contraseña</label>
+              <input id="new-user-password" name="password" type="password" placeholder="Contraseña (mín. 10 caracteres)" required minlength="10" maxlength="200" autocomplete="new-password">
+              <label class="sr-only" for="new-user-role">Rol</label>
+              <select id="new-user-role" name="role" required>
+                <option value="staff">Personal</option>
+                <option value="admin">Administrador</option>
+              </select>
+              <button class="button button-primary" type="submit">＋ Crear cuenta</button>
+            </form>
+            <p id="user-error" class="form-error hidden" role="alert"></p>
+            <div id="user-list" class="category-list"></div>
           </section>
         </section>
       </main>
