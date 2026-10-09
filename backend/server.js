@@ -1,3 +1,7 @@
+const {
+  loadStoreFromDatabase,
+  saveStoreToDatabase,
+} = require("./db-store");
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -28,33 +32,14 @@ function createEmptyStore() {
 }
 
 async function loadStore() {
-  try {
-    const contents = await fs.promises.readFile(DATA_FILE, "utf8");
-    const parsed = JSON.parse(contents);
-    if (
-      !parsed ||
-      !Array.isArray(parsed.users) ||
-      !Array.isArray(parsed.categories) ||
-      !Array.isArray(parsed.items)
-    ) {
-      throw new Error("El archivo de datos no tiene el formato esperado.");
-    }
-    return parsed;
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-    const emptyStore = createEmptyStore();
-    await fs.promises.writeFile(DATA_FILE, JSON.stringify(emptyStore, null, 2));
-    return emptyStore;
-  }
+  return loadStoreFromDatabase();
 }
 
 function saveStore() {
-  const snapshot = JSON.stringify(store, null, 2);
-  const persist = async () => {
-    const temporaryFile = `${DATA_FILE}.tmp`;
-    await fs.promises.writeFile(temporaryFile, snapshot, "utf8");
-    await fs.promises.rename(temporaryFile, DATA_FILE);
-  };
+  const snapshot = JSON.parse(JSON.stringify(store));
+
+  const persist = () => saveStoreToDatabase(snapshot);
+
   saveQueue = saveQueue.then(persist, persist);
   return saveQueue;
 }
