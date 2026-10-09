@@ -9,11 +9,18 @@ const confirmPasswordField = document.querySelector("#confirm-password-field");
 const confirmPasswordInput = document.querySelector("#auth-confirm-password");
 const setupNote = document.querySelector("#setup-note");
 const toast = document.querySelector("#toast");
+const itemImageInput = document.querySelector("#item-image");
+const itemImagePreview = document.querySelector("#item-image-preview");
+const itemImagePreviewImage = document.querySelector("#item-image-preview-img");
 
 let setupRequired = false;
 let appData = { user: null, categories: [], items: [], users: [] };
 let activeView = "dashboard";
 let toastTimer;
+let itemImageObjectUrl;
+let selectedItemIds = new Set();
+let activeCheckoutIds = [];
+let selectionMode = "checkout";
 
 const statusLabels = {
   available: "Disponible",
@@ -31,7 +38,12 @@ async function api(path, options = {}) {
     },
   });
   const result = response.status === 204 ? {} : await response.json();
-  if (!response.ok) throw new Error(result.error || "No se pudo completar la solicitud.");
+  if (!response.ok) {
+    const message = response.status === 413 && path === "/api/items"
+      ? "El servidor rechazó el tamaño de la imagen. Reinicia el servidor para aplicar los cambios y usa una imagen de hasta 2 MB."
+      : result.error || "No se pudo completar la solicitud.";
+    throw new Error(message);
+  }
   return result;
 }
 
@@ -43,6 +55,28 @@ function showError(element, message) {
 function hideError(element) {
   element.textContent = "";
   element.classList.add("hidden");
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") resolve(reader.result);
+      else reject(new Error("No se pudo leer la imagen seleccionada."));
+    });
+    reader.addEventListener("error", () => {
+      reject(reader.error || new Error("No se pudo leer la imagen seleccionada."));
+    });
+    reader.readAsDataURL(file);
+  });
+}
+
+function clearItemImagePreview() {
+  if (itemImageObjectUrl) URL.revokeObjectURL(itemImageObjectUrl);
+  itemImageObjectUrl = undefined;
+  itemImageInput.value = "";
+  itemImagePreviewImage.removeAttribute("src");
+  itemImagePreview.classList.add("hidden");
 }
 
 function notify(message, isError = false) {
@@ -72,6 +106,11 @@ function setAuthMode(isSetup) {
 
 async function refreshData() {
   appData = await api("/api/data");
+  const deleteMode = selectionMode === "delete" && appData.user.role === "admin";
+  const availableIds = new Set(appData.items
+    .filter((item) => deleteMode ? item.status !== "borrowed" : item.status === "available")
+    .map((item) => item.id));
+  selectedItemIds = new Set([...selectedItemIds].filter((id) => availableIds.has(id)));
   document.querySelector("#user-name").textContent = appData.user.username;
   document.querySelector("#user-avatar").textContent = appData.user.username.charAt(0);
   document.querySelector("#user-role").textContent =
@@ -121,8 +160,15 @@ function categoryName(categoryId) {
   return appData.categories.find((category) => category.id === categoryId)?.name || "Sin categoría";
 }
 
-function formatDate(isoString) {
-  return new Intl.DateTimeFormat("es", { day: "numeric", month: "short" }).format(new Date(isoString));
+function formatDateTime(isoString) {
+  const date = new Date(isoString);
+  if (!isoString || Number.isNaN(date.getTime())) return "Sin fecha registrada";
+  return new Intl.DateTimeFormat("es", {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function renderDashboard() {
@@ -140,13 +186,28 @@ function renderDashboard() {
   );
 
   const loans = items.filter((item) => item.status === "borrowed");
-  document.querySelector("#recent-loans").innerHTML = loans.length
-    ? loans.slice(0, 6).map((item) => `
-      <div class="loan-row">
-        <div><span class="loan-name">${escapeHtml(item.name)}</span>${item.code ? `<span class="loan-code">${escapeHtml(item.code)}</span>` : ""}</div>
-        <div><span class="person-name">${escapeHtml(item.loan.person)}</span><span class="loan-date">Desde ${formatDate(item.loan.checkedOutAt)}</span></div>
-        <span class="loan-reason">${escapeHtml(item.loan.reason)}</span>
-        <button class="small-action" type="button" data-action="return" data-id="${item.id}">Registrar devolución</button>
+  const loansByPerson = new Map();
+  for (const item of loans) {
+    const personKey = item.loan.person.trim().toLocaleLowerCase();
+    if (!loansByPerson.has(personKey)) loansByPerson.set(personKey, []);
+    loansByPerson.get(personKey).push(item);
+  }
+  const loanGroups = [...loansByPerson.values()];
+  document.querySelector("#recent-loans").innerHTML = loanGroups.length
+    ? loanGroups.map((personItems) => `
+      <div class="loan-group">
+        <div class="loan-group-heading">
+          <div><span class="person-name">${escapeHtml(personItems[0].loan.person)}</span><span class="loan-date">${personItems.length} ${personItems.length === 1 ? "implemento en uso" : "implementos en uso"}</span></div>
+          <button class="small-action" type="button" data-action="return-all" data-count="${personItems.length}" data-person="${escapeHtml(personItems[0].loan.person)}">Devolver todos</button>
+        </div>
+        <div class="loan-group-items">${personItems.map((item) => `
+          <div class="loan-row">
+            <div><span class="loan-name">${escapeHtml(item.name)}</span>${item.code ? `<span class="loan-code">${escapeHtml(item.code)}</span>` : ""}</div>
+            <span class="loan-reason">${escapeHtml(item.loan.reason)}</span>
+            <span class="loan-date">Desde ${formatDateTime(item.loan.checkedOutAt)}</span>
+            <button class="small-action" type="button" data-action="return" data-id="${item.id}">Devolver</button>
+          </div>
+        `).join("")}</div>
       </div>
     `).join("")
     : '<div class="empty-inline">No hay préstamos activos por ahora.</div>';
@@ -165,6 +226,7 @@ function renderDashboard() {
 }
 
 function renderInventory() {
+  const deleteMode = selectionMode === "delete" && appData.user.role === "admin";
   const search = document.querySelector("#search-input").value.trim().toLocaleLowerCase();
   const selectedCategory = document.querySelector("#category-filter").value;
   const selectedStatus = document.querySelector("#status-filter").value;
@@ -174,11 +236,35 @@ function renderInventory() {
       (!selectedCategory || item.categoryId === selectedCategory) &&
       (!selectedStatus || item.status === selectedStatus);
   });
+  const selectableItems = items.filter((item) =>
+    deleteMode ? item.status !== "borrowed" : item.status === "available",
+  );
+  const selectVisibleItems = document.querySelector("#select-visible-items");
+  selectVisibleItems.checked = selectableItems.length > 0 &&
+    selectableItems.every((item) => selectedItemIds.has(item.id));
+  selectVisibleItems.disabled = selectableItems.length === 0;
+  selectVisibleItems.setAttribute(
+    "aria-label",
+    deleteMode ? "Seleccionar implementos visibles que no están prestados" : "Seleccionar implementos disponibles visibles",
+  );
+  const selectedCount = selectedItemIds.size;
+  document.querySelector("#selection-toolbar").classList.toggle("hidden", selectedCount === 0 && !deleteMode);
+  document.querySelector("#selection-count").textContent =
+    `${selectedCount} ${selectedCount === 1 ? "implemento seleccionado" : "implementos seleccionados"}`;
+  document.querySelector("#selection-hint").textContent = deleteMode
+    ? "No se pueden eliminar implementos que están prestados."
+    : "Se registrarán en el mismo préstamo";
+  document.querySelector("#checkout-selected-button").classList.toggle("hidden", deleteMode);
+  document.querySelector("#delete-selected-button").classList.toggle("hidden", !deleteMode);
+  document.querySelector("#delete-selected-button").disabled = selectedCount === 0;
+  document.querySelector("#delete-mode-button").textContent = deleteMode
+    ? "Cancelar selección"
+    : "Seleccionar para eliminar";
 
   document.querySelector("#inventory-body").innerHTML = items.map((item) => {
     const loan = item.loan;
     const details = loan
-      ? `<div class="loan-cell"><strong>${escapeHtml(loan.person)}</strong><span>${escapeHtml(loan.reason)}</span></div>`
+      ? `<div class="loan-cell"><strong>${escapeHtml(loan.person)}</strong><span>${escapeHtml(loan.reason)}</span><span>Desde ${formatDateTime(loan.checkedOutAt)}</span></div>`
       : '<span class="muted">—</span>';
     let actions = '<span class="muted">—</span>';
     if (item.status === "borrowed") {
@@ -189,8 +275,18 @@ function renderInventory() {
       const nextLabel = item.status === "lost" ? "Marcar disponible" : "Habilitar";
       actions = `<button class="small-action" type="button" data-action="status" data-status="available" data-id="${item.id}">${nextLabel}</button><button class="small-action danger" type="button" data-action="delete" data-id="${item.id}">Eliminar</button>`;
     }
+    const thumbnail = item.image
+      ? `<img class="item-thumb" src="${escapeHtml(item.image)}" alt="" loading="lazy">`
+      : '<span class="item-thumb-placeholder" aria-hidden="true">◫</span>';
+    const canSelect = deleteMode
+      ? item.status !== "borrowed"
+      : item.status === "available";
+    const selection = canSelect
+      ? `<input class="item-selection" type="checkbox" data-select-item="${item.id}" aria-label="Seleccionar ${escapeHtml(item.name)}" ${selectedItemIds.has(item.id) ? "checked" : ""}>`
+      : "";
     return `<tr>
-      <td class="item-cell"><strong>${escapeHtml(item.name)}</strong><span>${item.code ? `Código: ${escapeHtml(item.code)}` : "Sin código asignado"}</span></td>
+      <td class="selection-cell">${selection}</td>
+      <td class="item-cell">${thumbnail}<span class="item-description"><strong>${escapeHtml(item.name)}</strong><span>${item.code ? `Código: ${escapeHtml(item.code)}` : "Sin código asignado"}</span></span></td>
       <td>${escapeHtml(categoryName(item.categoryId))}</td>
       <td><span class="status-pill status-${item.status}">${statusLabels[item.status]}</span></td>
       <td>${details}</td>
@@ -223,6 +319,7 @@ function renderUsers() {
       <span class="category-mark">♙</span>
       <strong>${escapeHtml(user.username)}${user.username === appData.user.username ? " (tú)" : ""}</strong>
       <span>${user.role === "admin" ? "Administrador" : "Personal"}</span>
+      <button class="delete-category" type="button" data-action="edit-user" data-username="${escapeHtml(user.username)}">Editar nombre</button>
       ${user.username === appData.user.username ? "" : `<button class="delete-category" type="button" data-action="delete-user" data-username="${escapeHtml(user.username)}">Eliminar</button>`}
     </div>
   `).join("");
@@ -281,9 +378,11 @@ async function handleAction(button) {
       return;
     }
     document.querySelector("#item-form").reset();
+    clearItemImagePreview();
     hideError(document.querySelector("#item-error"));
     document.querySelector("#item-dialog").showModal();
   } else if (action === "checkout" && item) {
+    activeCheckoutIds = [item.id];
     document.querySelector("#loan-form").reset();
     document.querySelector("#loan-item-id").value = item.id;
     document.querySelector("#loan-item-name").textContent = item.name;
@@ -295,6 +394,16 @@ async function handleAction(button) {
     await api(`/api/items/${id}/return`, { method: "PATCH", body: "{}" });
     await refreshData();
     notify("Devolución registrada.");
+  } else if (action === "return-all") {
+    const person = button.dataset.person || "esta persona";
+    const count = Number(button.dataset.count) || 0;
+    if (count === 0 || !confirm(`¿Registrar la devolución de todos los implementos de "${person}"?`)) return;
+    const result = await api("/api/items/return-person", {
+      method: "POST",
+      body: JSON.stringify({ person }),
+    });
+    await refreshData();
+    notify(`Devolución registrada para ${result.items.length} implementos.`);
   } else if (action === "status" && item) {
     const status = button.dataset.status;
     await api(`/api/items/${id}/status`, {
@@ -325,6 +434,14 @@ async function handleAction(button) {
     });
     await refreshData();
     notify("Cuenta eliminada.");
+  } else if (action === "edit-user") {
+    const username = button.dataset.username;
+    if (!username) return;
+    document.querySelector("#edit-user-current-name").value = username;
+    document.querySelector("#edit-user-name").value = username;
+    hideError(document.querySelector("#edit-user-error"));
+    document.querySelector("#edit-user-dialog").showModal();
+    document.querySelector("#edit-user-name").focus();
   }
 }
 
@@ -358,6 +475,13 @@ document.querySelector("#item-form").addEventListener("submit", async (event) =>
   submit.disabled = true;
   hideError(document.querySelector("#item-error"));
   try {
+    const imageFile = form.get("image");
+    if (imageFile instanceof File && imageFile.size > 2 * 1024 * 1024) {
+      throw new Error("La imagen no puede superar los 2 MB.");
+    }
+    const image = imageFile instanceof File && imageFile.size > 0
+      ? await fileToDataUrl(imageFile)
+      : "";
     await api("/api/items", {
       method: "POST",
       body: JSON.stringify({
@@ -365,9 +489,11 @@ document.querySelector("#item-form").addEventListener("submit", async (event) =>
         categoryId: form.get("categoryId"),
         code: form.get("code"),
         quantity: Number(form.get("quantity")),
+        image,
       }),
     });
     const quantity = Number(form.get("quantity"));
+    clearItemImagePreview();
     document.querySelector("#item-dialog").close();
     await refreshData();
     notify(quantity === 1
@@ -380,6 +506,22 @@ document.querySelector("#item-form").addEventListener("submit", async (event) =>
   }
 });
 
+itemImageInput.addEventListener("change", () => {
+  const file = itemImageInput.files[0];
+  if (itemImageObjectUrl) URL.revokeObjectURL(itemImageObjectUrl);
+  itemImageObjectUrl = undefined;
+  if (!file) {
+    itemImagePreviewImage.removeAttribute("src");
+    itemImagePreview.classList.add("hidden");
+    return;
+  }
+  itemImageObjectUrl = URL.createObjectURL(file);
+  itemImagePreviewImage.src = itemImageObjectUrl;
+  itemImagePreview.classList.remove("hidden");
+});
+
+document.querySelector("#item-image-clear").addEventListener("click", clearItemImagePreview);
+
 document.querySelector("#loan-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
@@ -387,13 +529,29 @@ document.querySelector("#loan-form").addEventListener("submit", async (event) =>
   submit.disabled = true;
   hideError(document.querySelector("#loan-error"));
   try {
-    await api(`/api/items/${document.querySelector("#loan-item-id").value}/checkout`, {
-      method: "PATCH",
-      body: JSON.stringify({ person: form.get("person"), reason: form.get("reason") }),
-    });
+    if (activeCheckoutIds.length > 1) {
+      await api("/api/items/checkout-batch", {
+        method: "POST",
+        body: JSON.stringify({
+          ids: activeCheckoutIds,
+          person: form.get("person"),
+          reason: form.get("reason"),
+        }),
+      });
+    } else {
+      await api(`/api/items/${document.querySelector("#loan-item-id").value}/checkout`, {
+        method: "PATCH",
+        body: JSON.stringify({ person: form.get("person"), reason: form.get("reason") }),
+      });
+    }
+    const checkoutCount = activeCheckoutIds.length;
+    activeCheckoutIds = [];
+    selectedItemIds.clear();
     document.querySelector("#loan-dialog").close();
     await refreshData();
-    notify("Préstamo registrado correctamente.");
+    notify(checkoutCount > 1
+      ? `Préstamo registrado para ${checkoutCount} implementos.`
+      : "Préstamo registrado correctamente.");
   } catch (error) {
     showError(document.querySelector("#loan-error"), error.message);
   } finally {
@@ -442,6 +600,68 @@ document.querySelector("#user-form").addEventListener("submit", async (event) =>
   }
 });
 
+document.querySelector("#edit-user-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const submit = event.currentTarget.querySelector('[type="submit"]');
+  submit.disabled = true;
+  hideError(document.querySelector("#edit-user-error"));
+  try {
+    await api("/api/users", {
+      method: "PATCH",
+      body: JSON.stringify({
+        currentUsername: form.get("currentUsername"),
+        username: form.get("username"),
+      }),
+    });
+    document.querySelector("#edit-user-dialog").close();
+    await refreshData();
+    notify("Nombre de usuario actualizado.");
+  } catch (error) {
+    showError(document.querySelector("#edit-user-error"), error.message);
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+document.querySelector("#password-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const newPassword = form.get("newPassword");
+  const submit = event.currentTarget.querySelector('[type="submit"]');
+  hideError(document.querySelector("#password-error"));
+  if (newPassword !== form.get("confirmNewPassword")) {
+    showError(document.querySelector("#password-error"), "Las nuevas contraseñas no coinciden.");
+    return;
+  }
+  submit.disabled = true;
+  try {
+    await api("/api/account/password", {
+      method: "PATCH",
+      body: JSON.stringify({
+        currentPassword: form.get("currentPassword"),
+        newPassword,
+      }),
+    });
+    document.querySelector("#password-dialog").close();
+    event.currentTarget.reset();
+    notify("Tu contraseña se actualizó correctamente.");
+  } catch (error) {
+    showError(document.querySelector("#password-error"), error.message);
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+for (const button of document.querySelectorAll("#password-button, #password-button-mobile")) {
+  button.addEventListener("click", () => {
+    document.querySelector("#password-form").reset();
+    hideError(document.querySelector("#password-error"));
+    document.querySelector("#password-dialog").showModal();
+    document.querySelector("#current-password").focus();
+  });
+}
+
 document.querySelector("#logout-button").addEventListener("click", async () => {
   const button = document.querySelector("#logout-button");
   button.disabled = true;
@@ -477,6 +697,83 @@ document.addEventListener("click", async (event) => {
 document.querySelector("#search-input").addEventListener("input", renderInventory);
 document.querySelector("#category-filter").addEventListener("change", renderInventory);
 document.querySelector("#status-filter").addEventListener("change", renderInventory);
+document.querySelector("#inventory-body").addEventListener("change", (event) => {
+  const checkbox = event.target.closest("[data-select-item]");
+  if (!checkbox) return;
+  if (checkbox.checked && selectedItemIds.size >= 100) {
+    notify("Puedes seleccionar hasta 100 implementos.", true);
+    renderInventory();
+    return;
+  }
+  if (checkbox.checked) selectedItemIds.add(checkbox.dataset.selectItem);
+  else selectedItemIds.delete(checkbox.dataset.selectItem);
+  renderInventory();
+});
+
+document.querySelector("#select-visible-items").addEventListener("change", (event) => {
+  const deleteMode = selectionMode === "delete" && appData.user.role === "admin";
+  const search = document.querySelector("#search-input").value.trim().toLocaleLowerCase();
+  const selectedCategory = document.querySelector("#category-filter").value;
+  const selectedStatus = document.querySelector("#status-filter").value;
+  const visibleSelectableItems = appData.items.filter((item) => {
+    const matchesSearch = `${item.name} ${item.code}`.toLocaleLowerCase().includes(search);
+    const eligible = deleteMode ? item.status !== "borrowed" : item.status === "available";
+    return eligible &&
+      matchesSearch &&
+      (!selectedCategory || item.categoryId === selectedCategory) &&
+      (!selectedStatus || item.status === selectedStatus);
+  });
+  const itemsToAdd = visibleSelectableItems.filter((item) => !selectedItemIds.has(item.id));
+  const availableSlots = event.target.checked ? 100 - selectedItemIds.size : Infinity;
+  if (event.target.checked && itemsToAdd.length > availableSlots) {
+    notify("Puedes seleccionar hasta 100 implementos.", true);
+  }
+  if (event.target.checked) {
+    for (const item of itemsToAdd.slice(0, availableSlots)) selectedItemIds.add(item.id);
+  } else {
+    for (const item of visibleSelectableItems) selectedItemIds.delete(item.id);
+  }
+  renderInventory();
+});
+
+document.querySelector("#delete-mode-button").addEventListener("click", () => {
+  selectionMode = selectionMode === "delete" ? "checkout" : "delete";
+  selectedItemIds.clear();
+  renderInventory();
+});
+
+document.querySelector("#checkout-selected-button").addEventListener("click", () => {
+  activeCheckoutIds = [...selectedItemIds];
+  if (activeCheckoutIds.length === 0) return;
+  const items = appData.items.filter((item) => activeCheckoutIds.includes(item.id));
+  document.querySelector("#loan-form").reset();
+  document.querySelector("#loan-item-id").value = "";
+  document.querySelector("#loan-item-name").textContent =
+    `Usar ${items.length} ${items.length === 1 ? "implemento" : "implementos"}`;
+  hideError(document.querySelector("#loan-error"));
+  document.querySelector("#loan-dialog").showModal();
+  document.querySelector("#loan-person").focus();
+});
+
+document.querySelector("#delete-selected-button").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const ids = [...selectedItemIds];
+  if (ids.length === 0 || selectionMode !== "delete" || appData.user.role !== "admin") return;
+  if (!confirm(`¿Eliminar permanentemente los ${ids.length} implementos seleccionados? Esta acción no se puede deshacer.`)) return;
+  button.disabled = true;
+  try {
+    const result = await api("/api/items/delete-batch", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    });
+    await refreshData();
+    notify(`Se eliminaron ${result.deleted} implementos.`);
+  } catch (error) {
+    notify(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 async function initialize() {
   try {

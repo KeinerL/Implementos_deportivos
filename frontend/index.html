@@ -4,16 +4,15 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#102d3b">
-    <title>Cancha — Implementos deportivos</title>
+    <title>Sport Control — Implementos deportivos</title>
     <link rel="stylesheet" href="/styles.css">
     <script src="/app.js" defer></script>
   </head>
   <body>
     <section id="auth-screen" class="auth-screen">
       <div class="auth-card">
-        <a class="brand brand-auth" href="/" aria-label="Cancha, inicio">
-          <span class="brand-mark" aria-hidden="true">C</span>
-          <span>cancha<span class="brand-period">.</span></span>
+        <a class="brand brand-auth" href="/" aria-label="Sports Control, inicio">
+          <span class="brand-mark">Sports Control</span>
         </a>
         <p class="eyebrow">CONTROL DE INVENTARIO</p>
         <h1 id="auth-title">Bienvenido de nuevo</h1>
@@ -45,8 +44,7 @@
     <div id="app-screen" class="app-shell hidden">
       <aside class="sidebar">
         <a class="brand" href="#" data-view="dashboard">
-          <span class="brand-mark" aria-hidden="true">C</span>
-          <span>cancha<span class="brand-period">.</span></span>
+          <span class="brand-mark">Sports Control</span>
         </a>
         <p class="sidebar-label">MENÚ</p>
         <nav class="main-nav" aria-label="Navegación principal">
@@ -60,6 +58,7 @@
           <div class="user-panel">
             <span class="avatar" id="user-avatar">E</span>
             <span class="user-identity"><span class="user-name" id="user-name">Encargado</span><span class="user-role" id="user-role"></span></span>
+            <button id="password-button" class="small-action" type="button">Cambiar contraseña</button>
           </div>
         </div>
       </aside>
@@ -71,6 +70,7 @@
             <h1 id="page-title">Resumen</h1>
           </div>
           <div class="topbar-actions">
+            <button id="password-button-mobile" class="button button-secondary password-button-mobile" type="button" aria-label="Cambiar contraseña">Clave</button>
             <button id="logout-button" class="button button-secondary logout-button" type="button"><span aria-hidden="true">↪</span> Cerrar sesión</button>
             <button class="button button-primary topbar-action admin-only hidden" type="button" data-action="add-item"><span aria-hidden="true">＋</span> Agregar implemento</button>
           </div>
@@ -105,10 +105,17 @@
               <label class="search-box"><span aria-hidden="true">⌕</span><input id="search-input" type="search" placeholder="Buscar implemento o código..." aria-label="Buscar implemento o código"></label>
               <select id="category-filter" aria-label="Filtrar por categoría"><option value="">Todas las categorías</option></select>
               <select id="status-filter" aria-label="Filtrar por estado"><option value="">Todos los estados</option><option value="available">Disponible</option><option value="borrowed">En uso</option><option value="maintenance">Mantenimiento</option><option value="lost">Perdido</option></select>
+              <button id="delete-mode-button" class="button button-secondary admin-only hidden" type="button">Seleccionar para eliminar</button>
+            </div>
+            <div id="selection-toolbar" class="selection-toolbar hidden">
+              <span id="selection-count">0 implementos seleccionados</span>
+              <span id="selection-hint" class="selection-hint">Se registrarán en el mismo préstamo</span>
+              <button id="checkout-selected-button" class="button button-primary" type="button">Usar seleccionados</button>
+              <button id="delete-selected-button" class="button button-danger hidden" type="button">Eliminar seleccionados</button>
             </div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>IMPLEMENTO</th><th>CATEGORÍA</th><th>ESTADO</th><th>PERSONA / MOTIVO</th><th>ACCIONES</th></tr></thead>
+                <thead><tr><th class="selection-cell"><input id="select-visible-items" type="checkbox" aria-label="Seleccionar implementos disponibles visibles"></th><th>IMPLEMENTO</th><th>CATEGORÍA</th><th>ESTADO</th><th>PERSONA / MOTIVO</th><th>ACCIONES</th></tr></thead>
                 <tbody id="inventory-body"></tbody>
               </table>
               <div id="inventory-empty" class="empty-state hidden"><span class="empty-icon">◫</span><h3>No hay implementos para mostrar</h3><p>Agrega un implemento o cambia los filtros de búsqueda.</p><button class="button button-primary admin-only hidden" type="button" data-action="add-item">Agregar implemento</button></div>
@@ -130,7 +137,7 @@
         </section>
 
         <section id="view-users" class="view hidden">
-          <div class="page-intro"><p>Crea cuentas para el personal y define qué permisos tendrá cada persona.</p></div>
+          <div class="page-intro"><p>Crea cuentas para el personal, modifica sus nombres y define qué permisos tendrá cada persona.</p></div>
           <section class="panel category-panel">
             <div class="panel-heading"><div><p class="eyebrow">ACCESO</p><h2>Cuentas del equipo</h2></div></div>
             <form id="user-form" class="inline-form user-form">
@@ -159,6 +166,13 @@
         <input id="item-name" name="name" placeholder="Ej. Balón de fútbol #5" required maxlength="100">
         <label for="item-category">Categoría</label>
         <select id="item-category" name="categoryId" required></select>
+        <label for="item-image">Imagen del implemento <span class="optional-label">Opcional · PNG, JPG o WebP · máx. 2 MB</span></label>
+        <input id="item-image" name="image" type="file" accept="image/png,image/jpeg,image/webp">
+        <div id="item-image-preview" class="image-preview hidden">
+          <img id="item-image-preview-img" alt="Vista previa de la imagen">
+          <span>Vista previa</span>
+          <button id="item-image-clear" class="text-button" type="button">Quitar</button>
+        </div>
         <label for="item-code">Código o número de serie <span class="optional-label">Opcional</span></label>
         <input id="item-code" name="code" placeholder="Ej. BAL-001" maxlength="50">
         <p class="field-hint">Si agregas varias unidades, se numerarán automáticamente (ej. BAL-001-01, BAL-001-02).</p>
@@ -179,6 +193,31 @@
         <textarea id="loan-reason" name="reason" placeholder="Ej. Entrenamiento de fútbol" required maxlength="240" rows="3"></textarea>
         <p id="loan-error" class="form-error hidden" role="alert"></p>
         <div class="dialog-actions"><button class="button button-secondary" type="button" data-close="loan-dialog">Cancelar</button><button class="button button-primary" type="submit">Confirmar préstamo</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="edit-user-dialog" class="dialog">
+      <form id="edit-user-form" class="dialog-form">
+        <div class="dialog-heading"><div><p class="eyebrow">CUENTA DE USUARIO</p><h2>Modificar nombre</h2></div><button class="icon-button dialog-close" type="button" data-close="edit-user-dialog" aria-label="Cerrar">×</button></div>
+        <input id="edit-user-current-name" name="currentUsername" type="hidden">
+        <label for="edit-user-name">Nombre de usuario</label>
+        <input id="edit-user-name" name="username" required minlength="3" maxlength="40" autocomplete="off">
+        <p id="edit-user-error" class="form-error hidden" role="alert"></p>
+        <div class="dialog-actions"><button class="button button-secondary" type="button" data-close="edit-user-dialog">Cancelar</button><button class="button button-primary" type="submit">Guardar cambios</button></div>
+      </form>
+    </dialog>
+    <dialog id="password-dialog" class="dialog">
+      <form id="password-form" class="dialog-form">
+        <div class="dialog-heading"><div><p class="eyebrow">SEGURIDAD</p><h2>Cambiar contraseña</h2></div><button class="icon-button dialog-close" type="button" data-close="password-dialog" aria-label="Cerrar">×</button></div>
+        <label for="current-password">Contraseña actual</label>
+        <input id="current-password" name="currentPassword" type="password" autocomplete="current-password" required maxlength="200">
+        <label for="new-password">Nueva contraseña</label>
+        <input id="new-password" name="newPassword" type="password" autocomplete="new-password" required minlength="10" maxlength="200">
+        <label for="confirm-new-password">Confirma la nueva contraseña</label>
+        <input id="confirm-new-password" name="confirmNewPassword" type="password" autocomplete="new-password" required minlength="10" maxlength="200">
+        <p class="field-hint">Debe tener entre 10 y 200 caracteres. Solo cambiará la contraseña de tu cuenta.</p>
+        <p id="password-error" class="form-error hidden" role="alert"></p>
+        <div class="dialog-actions"><button class="button button-secondary" type="button" data-close="password-dialog">Cancelar</button><button class="button button-primary" type="submit">Guardar contraseña</button></div>
       </form>
     </dialog>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>

@@ -1,4 +1,4 @@
-# Cancha — gestor de implementos deportivos
+# Sport Control — gestor de implementos deportivos
 
 Aplicación web local para que los encargados organicen el equipo, consulten cuántos implementos hay disponibles y registren quién usa cada uno y con qué motivo.
 
@@ -8,17 +8,17 @@ Aplicación web local para que los encargados organicen el equipo, consulten cu�
 
 ## Incluye
 
-- Inicio de sesión por cuenta con roles de administrador y personal.
+- Inicio de sesión por cuenta con roles de administrador y personal; cada persona puede cambiar la contraseña de su propia cuenta, confirmando la contraseña actual.
 - Resumen de implementos disponibles, prestados y por revisar.
-- Administración de usuarios, implementos, categorías y códigos únicos opcionales. Se pueden agregar hasta 100 unidades en una sola operación; si se indica un código base, cada unidad recibe un sufijo consecutivo. Solo administradores pueden gestionar cuentas, implementos y categorías; el personal puede consultar el inventario y registrar préstamos y devoluciones.
+- Administración de usuarios, implementos, categorías y códigos únicos opcionales. Se pueden agregar hasta 100 unidades en una sola operación; si se indica un código base, cada unidad recibe un sufijo consecutivo. Los administradores pueden seleccionar y eliminar varios implementos a la vez, excepto los que estén prestados. Solo administradores pueden gestionar cuentas, implementos y categorías; el personal puede consultar el inventario y registrar préstamos y devoluciones.
 - Filtros por nombre, categoría y estado.
-- Registro de préstamos con persona y motivo, y registro de devoluciones.
+- Registro de préstamos con persona, motivo, fecha y hora local, y registro de devoluciones. Se pueden seleccionar varios implementos disponibles y prestarlos juntos a la misma persona; el resumen agrupa los préstamos activos por persona y permite devolverlos todos en una sola acción.
 - Estados de disponible, en uso, mantenimiento y perdido; aviso de implementos perdidos.
-- Almacenamiento local en `backend/data.json`.
+- Almacenamiento local en `backend/data.json`, con imágenes opcionales de productos en `backend/uploads/`.
 
-Cada registro representa un implemento físico individual. Si hay cinco balones, registra cada balón por separado para poder saber cuál tiene cada persona.
+Cada registro representa un implemento físico individual. Si hay cinco balones, registra cada balón por separado para poder saber cuál tiene cada persona. Al agregar implementos se puede adjuntar una imagen PNG, JPG o WebP de hasta 2 MB; se muestra como miniatura en el inventario.
 
-La primera cuenta creada durante la configuración inicial tiene el rol de administrador. Las cuentas nuevas se crean desde la sección «Usuarios» y pueden tener rol de personal o administrador. Los registros de usuario antiguos sin rol se consideran administradores para conservar el acceso tras la actualización. Las contraseñas se guardan derivadas mediante scrypt. Las sesiones usan una cookie HTTP-only y se mantienen mientras el servidor está ejecutándose; al reiniciar el servidor hay que volver a iniciar sesión. Para usar la aplicación por HTTPS, configura `SECURE_COOKIES=true`.
+La primera cuenta creada durante la configuración inicial tiene el rol de administrador. Las cuentas nuevas se crean desde la sección «Usuarios» y pueden tener rol de personal o administrador; un administrador también puede modificar el nombre de cualquier cuenta, incluida la suya, sin cambiar su rol ni contraseña. Los registros de usuario antiguos sin rol se consideran administradores para conservar el acceso tras la actualización. Las contraseñas se guardan derivadas mediante scrypt. Las sesiones usan una cookie HTTP-only y se mantienen mientras el servidor está ejecutándose; al reiniciar el servidor hay que volver a iniciar sesión. Para usar la aplicación por HTTPS, configura `SECURE_COOKIES=true`.
 
 ## Estructura
 

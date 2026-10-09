@@ -12,10 +12,13 @@ const {
 const scryptAsync = promisify(scrypt);
 const ROOT = path.resolve(__dirname, "..");
 const DATA_FILE = path.join(__dirname, "data.json");
+const IMAGE_DIR = path.join(__dirname, "uploads");
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || "127.0.0.1";
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const MAX_BODY_BYTES = 16 * 1024;
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_IMAGE_REQUEST_BYTES = Math.ceil(MAX_IMAGE_BYTES * 4 / 3) + 64 * 1024;
 const sessions = new Map();
 let store;
 let saveQueue = Promise.resolve();
@@ -120,7 +123,7 @@ function isSameOrigin(request) {
   }
 }
 
-async function readJson(request) {
+async function readJson(request, maxBytes = MAX_BODY_BYTES) {
   if (!request.headers["content-type"]?.includes("application/json")) {
     const error = new Error("El contenido debe enviarse como JSON.");
     error.statusCode = 415;
@@ -131,7 +134,7 @@ async function readJson(request) {
   const chunks = [];
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > MAX_BODY_BYTES) {
+    if (size > maxBytes) {
       const error = new Error("La solicitud es demasiado grande.");
       error.statusCode = 413;
       throw error;
@@ -173,8 +176,48 @@ async function verifyPassword(password, user) {
 }
 
 function publicItem(item) {
-  const { id, name, code, categoryId, status, loan } = item;
-  return { id, name, code, categoryId, status, loan };
+  const { id, name, code, categoryId, status, loan, image } = item;
+  return { id, name, code, categoryId, status, loan, ...(image ? { image } : {}) };
+}
+
+function decodeProductImage(dataUrl) {
+  const match = typeof dataUrl === "string"
+    ? dataUrl.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/)
+    : null;
+  if (!match) {
+    const error = new Error("La imagen debe estar en formato PNG, JPG o WebP.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const [, format, encoded] = match;
+  const contents = Buffer.from(encoded, "base64");
+  if (
+    contents.length === 0 ||
+    contents.length > MAX_IMAGE_BYTES ||
+    contents.toString("base64") !== encoded
+  ) {
+    const error = new Error("La imagen no puede superar los 2 MB.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const isPng = format === "png" &&
+    contents.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  const isJpeg = format === "jpeg" &&
+    contents.length >= 3 &&
+    contents[0] === 0xff && contents[1] === 0xd8 && contents[2] === 0xff;
+  const isWebp = format === "webp" &&
+    contents.length >= 12 &&
+    contents.toString("ascii", 0, 4) === "RIFF" &&
+    contents.toString("ascii", 8, 12) === "WEBP";
+  if (!isPng && !isJpeg && !isWebp) {
+    const error = new Error("El contenido no coincide con el formato de imagen seleccionado.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return {
+    contents,
+    extension: format === "jpeg" ? "jpg" : format,
+  };
 }
 
 function sendFile(response, relativePath, contentType) {
@@ -283,6 +326,56 @@ async function handleApi(request, response, pathname) {
   }
   const isAdmin = safeUser(currentUser).role === "admin";
 
+  if (request.method === "PATCH" && pathname === "/api/account/password") {
+    const body = await readJson(request);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      sendJson(response, 400, { error: "Los datos de la contraseña no son válidos." });
+      return;
+    }
+    const currentPassword = typeof body.currentPassword === "string" ? body.currentPassword : "";
+    const newPassword = typeof body.newPassword === "string" ? body.newPassword : "";
+    if (newPassword.length < 10 || newPassword.length > 200) {
+      sendJson(response, 400, { error: "La nueva contraseña debe tener entre 10 y 200 caracteres." });
+      return;
+    }
+    if (!await verifyPassword(currentPassword, currentUser)) {
+      sendJson(response, 401, { error: "La contraseña actual es incorrecta." });
+      return;
+    }
+    const credentials = await hashPassword(newPassword);
+    currentUser.salt = credentials.salt;
+    currentUser.hash = credentials.hash;
+    for (const [token, sessionEntry] of sessions) {
+      if (sessionEntry.username === currentUser.username && token !== session.token) {
+        sessions.delete(token);
+      }
+    }
+    await saveStore();
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  const imageMatch = pathname.match(/^\/api\/images\/([0-9a-f-]{36})\.(png|jpg|webp)$/i);
+  if (request.method === "GET" && imageMatch) {
+    const imagePath = path.join(IMAGE_DIR, `${imageMatch[1]}.${imageMatch[2].toLowerCase()}`);
+    try {
+      const contents = await fs.promises.readFile(imagePath);
+      const contentType = imageMatch[2].toLowerCase() === "jpg"
+        ? "image/jpeg"
+        : `image/${imageMatch[2].toLowerCase()}`;
+      response.writeHead(200, {
+        "Content-Type": contentType,
+        "Cache-Control": "private, max-age=86400",
+        "X-Content-Type-Options": "nosniff",
+      });
+      response.end(contents);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      sendJson(response, 404, { error: "No se encontró la imagen." });
+    }
+    return;
+  }
+
   if (request.method === "GET" && pathname === "/api/data") {
     sendJson(response, 200, {
       user: safeUser(currentUser),
@@ -325,6 +418,43 @@ async function handleApi(request, response, pathname) {
     store.users.push(user);
     await saveStore();
     sendJson(response, 201, { user: safeUser(user) });
+    return;
+  }
+
+  if (request.method === "PATCH" && pathname === "/api/users") {
+    if (!isAdmin) {
+      sendJson(response, 403, { error: "Solo un administrador puede gestionar usuarios." });
+      return;
+    }
+    const body = await readJson(request);
+    const currentUsername = cleanText(body.currentUsername, 40);
+    const username = cleanText(body.username, 40);
+    if (!/^[\p{L}\p{N}_.-]{3,40}$/u.test(username)) {
+      sendJson(response, 400, {
+        error: "El usuario debe tener entre 3 y 40 letras, números, puntos, guiones o guiones bajos.",
+      });
+      return;
+    }
+    const user = store.users.find(
+      (entry) => entry.username.toLocaleLowerCase() === currentUsername.toLocaleLowerCase(),
+    );
+    if (!user) {
+      sendJson(response, 404, { error: "No se encontró el usuario que quieres modificar." });
+      return;
+    }
+    if (store.users.some(
+      (entry) => entry !== user && entry.username.toLocaleLowerCase() === username.toLocaleLowerCase(),
+    )) {
+      sendJson(response, 409, { error: "Ya existe un usuario con ese nombre." });
+      return;
+    }
+    const previousUsername = user.username;
+    user.username = username;
+    for (const sessionEntry of sessions.values()) {
+      if (sessionEntry.username === previousUsername) sessionEntry.username = username;
+    }
+    await saveStore();
+    sendJson(response, 200, { user: safeUser(user) });
     return;
   }
 
@@ -400,7 +530,7 @@ async function handleApi(request, response, pathname) {
       sendJson(response, 403, { error: "Solo un administrador puede agregar implementos." });
       return;
     }
-    const body = await readJson(request);
+    const body = await readJson(request, MAX_IMAGE_REQUEST_BYTES);
     const name = cleanText(body.name, 100);
     const code = cleanText(body.code, 50);
     const quantity = body.quantity === undefined ? 1 : body.quantity;
@@ -430,6 +560,14 @@ async function handleApi(request, response, pathname) {
       sendJson(response, 409, { error: "Uno o más códigos ya existen en el inventario." });
       return;
     }
+    const image = body.image ? decodeProductImage(body.image) : null;
+    const imagePath = image ? `/api/images/${randomUUID()}.${image.extension}` : "";
+    if (image) {
+      await fs.promises.mkdir(IMAGE_DIR, { recursive: true });
+      await fs.promises.writeFile(path.join(IMAGE_DIR, path.basename(imagePath)), image.contents, {
+        flag: "wx",
+      });
+    }
     const items = codes.map((itemCode) => ({
       id: randomUUID(),
       name,
@@ -437,6 +575,7 @@ async function handleApi(request, response, pathname) {
       categoryId: category.id,
       status: "available",
       loan: null,
+      ...(imagePath ? { image: imagePath } : {}),
     }));
     store.items.push(...items);
     await saveStore();
@@ -444,6 +583,116 @@ async function handleApi(request, response, pathname) {
       ...(quantity === 1 ? { item: publicItem(items[0]) } : {}),
       items: items.map(publicItem),
     });
+    return;
+  }
+
+  if (request.method === "POST" && pathname === "/api/items/checkout-batch") {
+    const body = await readJson(request);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      sendJson(response, 400, { error: "Los datos del préstamo no son válidos." });
+      return;
+    }
+    const ids = body.ids;
+    const person = cleanText(body.person, 100);
+    const reason = cleanText(body.reason, 240);
+    if (
+      !Array.isArray(ids) ||
+      ids.length < 1 ||
+      ids.length > 100 ||
+      ids.some((id) => typeof id !== "string") ||
+      new Set(ids).size !== ids.length
+    ) {
+      sendJson(response, 400, { error: "Selecciona entre 1 y 100 implementos distintos." });
+      return;
+    }
+    if (!person || !reason) {
+      sendJson(response, 400, { error: "Indica quién recibe los implementos y el motivo del préstamo." });
+      return;
+    }
+    const items = ids.map((id) => store.items.find((entry) => entry.id === id));
+    if (items.some((item) => !item)) {
+      sendJson(response, 404, { error: "Uno o más implementos seleccionados ya no existen." });
+      return;
+    }
+    if (items.some((item) => item.status !== "available")) {
+      sendJson(response, 409, { error: "Uno o más implementos seleccionados ya no están disponibles." });
+      return;
+    }
+    const checkedOutAt = new Date().toISOString();
+    for (const item of items) {
+      item.status = "borrowed";
+      item.loan = {
+        person,
+        reason,
+        checkedOutAt,
+        checkedOutBy: session.username,
+      };
+    }
+    await saveStore();
+    sendJson(response, 200, { items: items.map(publicItem) });
+    return;
+  }
+
+  if (request.method === "POST" && pathname === "/api/items/return-person") {
+    const body = await readJson(request);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      sendJson(response, 400, { error: "Los datos de la devolución no son válidos." });
+      return;
+    }
+    const person = cleanText(body.person, 100);
+    if (!person) {
+      sendJson(response, 400, { error: "Indica la persona a quien corresponden los implementos." });
+      return;
+    }
+    const personKey = person.toLocaleLowerCase();
+    const items = store.items.filter((item) =>
+      item.status === "borrowed" &&
+      typeof item.loan?.person === "string" &&
+      item.loan.person.trim().toLocaleLowerCase() === personKey,
+    );
+    if (items.length === 0) {
+      sendJson(response, 409, { error: "Esta persona ya no tiene implementos prestados." });
+      return;
+    }
+    for (const item of items) {
+      item.status = "available";
+      item.loan = null;
+    }
+    await saveStore();
+    sendJson(response, 200, { items: items.map(publicItem) });
+    return;
+  }
+
+  if (request.method === "POST" && pathname === "/api/items/delete-batch") {
+    if (!isAdmin) {
+      sendJson(response, 403, { error: "Solo un administrador puede eliminar implementos." });
+      return;
+    }
+    const body = await readJson(request);
+    const ids = body && !Array.isArray(body) ? body.ids : null;
+    if (
+      !Array.isArray(ids) ||
+      ids.length < 1 ||
+      ids.length > 100 ||
+      ids.some((id) => typeof id !== "string") ||
+      new Set(ids).size !== ids.length
+    ) {
+      sendJson(response, 400, { error: "Selecciona entre 1 y 100 implementos distintos." });
+      return;
+    }
+    const items = ids.map((id) => store.items.find((entry) => entry.id === id));
+    if (items.some((item) => !item)) {
+      sendJson(response, 404, { error: "Uno o más implementos seleccionados ya no existen." });
+      return;
+    }
+    if (items.some((item) => item.status === "borrowed")) {
+      sendJson(response, 409, { error: "Devuelve los implementos prestados antes de eliminarlos." });
+      return;
+    }
+    const selectedIds = new Set(ids);
+    store.items = store.items.filter((item) => !selectedIds.has(item.id));
+    await saveStore();
+    sendJson(response, 200, { deleted: items.length });
     return;
   }
 
