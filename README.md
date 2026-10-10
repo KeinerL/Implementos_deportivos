@@ -14,7 +14,6 @@ Aplicación web local para que los encargados organicen el equipo, consulten cu�
 - Filtros por nombre, categoría y estado.
 - Registro de préstamos con persona, motivo, fecha y hora local, y registro de devoluciones. Se pueden seleccionar varios implementos disponibles y prestarlos juntos a la misma persona; el resumen agrupa los préstamos activos por persona y permite devolverlos todos en una sola acción.
 - Estados de disponible, en uso, mantenimiento y perdido; aviso de implementos perdidos.
-- Almacenamiento local en `backend/data.json`, con imágenes opcionales de productos en `backend/uploads/`.
 
 Cada registro representa un implemento físico individual. Si hay cinco balones, registra cada balón por separado para poder saber cuál tiene cada persona. Al agregar implementos se puede adjuntar una imagen PNG, JPG o WebP de hasta 2 MB; se muestra como miniatura en el inventario.
 
