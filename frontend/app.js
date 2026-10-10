@@ -349,6 +349,7 @@ function renderUsers() {
       <strong>${escapeHtml(user.username)}${user.username === appData.user.username ? " (tú)" : ""}</strong>
       <span>${user.role === "admin" ? "Administrador" : "Personal"}</span>
       <button class="delete-category" type="button" data-action="edit-user" data-username="${escapeHtml(user.username)}">Editar nombre</button>
+      <button class="delete-category" type="button" data-action="reset-user-password" data-username="${escapeHtml(user.username)}">Cambiar contraseña</button>
       ${user.username === appData.user.username ? "" : `<button class="delete-category" type="button" data-action="delete-user" data-username="${escapeHtml(user.username)}">Eliminar</button>`}
     </div>
   `).join("");
@@ -481,6 +482,16 @@ async function handleAction(button) {
     hideError(document.querySelector("#edit-user-error"));
     document.querySelector("#edit-user-dialog").showModal();
     document.querySelector("#edit-user-name").focus();
+  } else if (action === "reset-user-password") {
+    const username = button.dataset.username;
+    if (!username) return;
+    const form = document.querySelector("#reset-user-password-form");
+    form.reset();
+    document.querySelector("#reset-user-password-username").value = username;
+    document.querySelector("#reset-user-password-title").textContent = `Cambiar contraseña de ${username}`;
+    hideError(document.querySelector("#reset-user-password-error"));
+    document.querySelector("#reset-user-password-dialog").showModal();
+    document.querySelector("#reset-user-password-new").focus();
   }
 }
 
@@ -676,6 +687,36 @@ document.querySelector("#edit-user-form").addEventListener("submit", async (even
     notify("Nombre de usuario actualizado.");
   } catch (error) {
     showError(document.querySelector("#edit-user-error"), error.message);
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+document.querySelector("#reset-user-password-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const newPassword = form.get("newPassword");
+  const submit = formElement.querySelector('[type="submit"]');
+  hideError(document.querySelector("#reset-user-password-error"));
+  if (newPassword !== form.get("confirmNewPassword")) {
+    showError(document.querySelector("#reset-user-password-error"), "Las contraseñas no coinciden.");
+    return;
+  }
+  submit.disabled = true;
+  try {
+    await api("/api/users/password", {
+      method: "PATCH",
+      body: JSON.stringify({
+        username: form.get("username"),
+        newPassword,
+      }),
+    });
+    document.querySelector("#reset-user-password-dialog").close();
+    formElement.reset();
+    notify("La contraseña se cambió correctamente. Las demás sesiones de esa cuenta se cerraron.");
+  } catch (error) {
+    showError(document.querySelector("#reset-user-password-error"), error.message);
   } finally {
     submit.disabled = false;
   }

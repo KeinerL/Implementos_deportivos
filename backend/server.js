@@ -456,6 +456,42 @@ async function handleApi(request, response, pathname) {
     return;
   }
 
+  if (request.method === "PATCH" && pathname === "/api/users/password") {
+    if (!isAdmin) {
+      sendJson(response, 403, { error: "Solo un administrador puede restablecer contraseñas desde esta sección." });
+      return;
+    }
+    const body = await readJson(request);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      sendJson(response, 400, { error: "Los datos de la contraseña no son válidos." });
+      return;
+    }
+    const username = cleanText(body.username, 40);
+    const newPassword = typeof body.newPassword === "string" ? body.newPassword : "";
+    if (newPassword.length < 10 || newPassword.length > 200) {
+      sendJson(response, 400, { error: "La nueva contraseña debe tener entre 10 y 200 caracteres." });
+      return;
+    }
+    const user = store.users.find(
+      (entry) => entry.username.toLocaleLowerCase() === username.toLocaleLowerCase(),
+    );
+    if (!user) {
+      sendJson(response, 404, { error: "No se encontró el usuario." });
+      return;
+    }
+    const credentials = await hashPassword(newPassword);
+    user.salt = credentials.salt;
+    user.hash = credentials.hash;
+    for (const [token, sessionEntry] of sessions) {
+      if (sessionEntry.username === user.username && token !== session.token) {
+        sessions.delete(token);
+      }
+    }
+    await saveStore();
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
   if (request.method === "PATCH" && pathname === "/api/users") {
     if (!isAdmin) {
       sendJson(response, 403, { error: "Solo un administrador puede gestionar usuarios." });
