@@ -157,6 +157,15 @@ function safeUser(user) {
   };
 }
 
+function resolveRequester(body, session, isAdmin) {
+  const username = isAdmin && typeof body.requestedBy === "string"
+    ? cleanText(body.requestedBy, 40) || session.username
+    : session.username;
+  return store.users.find(
+    (user) => user.username.toLocaleLowerCase() === username.toLocaleLowerCase(),
+  )?.username || null;
+}
+
 async function hashPassword(password, salt = randomBytes(16).toString("hex")) {
   const derivedKey = await scryptAsync(password, salt, 64);
   return { salt, hash: derivedKey.toString("hex") };
@@ -479,6 +488,9 @@ async function handleApi(request, response, pathname) {
     for (const sessionEntry of sessions.values()) {
       if (sessionEntry.username === previousUsername) sessionEntry.username = username;
     }
+    for (const item of store.items) {
+      if (item.loan?.requestedBy === previousUsername) item.loan.requestedBy = username;
+    }
     await saveStore();
     sendJson(response, 200, { user: safeUser(user) });
     return;
@@ -641,6 +653,11 @@ async function handleApi(request, response, pathname) {
       sendJson(response, 400, { error: "Indica quién recibe los implementos y el motivo del préstamo." });
       return;
     }
+    const requestedBy = resolveRequester(body, session, isAdmin);
+    if (!requestedBy) {
+      sendJson(response, 404, { error: "No se encontró la cuenta que solicita el préstamo." });
+      return;
+    }
     const items = ids.map((id) => store.items.find((entry) => entry.id === id));
     if (items.some((item) => !item)) {
       sendJson(response, 404, { error: "Uno o más implementos seleccionados ya no existen." });
@@ -658,6 +675,7 @@ async function handleApi(request, response, pathname) {
         reason,
         checkedOutAt,
         checkedOutBy: session.username,
+        requestedBy,
       };
     }
     await saveStore();
@@ -677,13 +695,20 @@ async function handleApi(request, response, pathname) {
       return;
     }
     const personKey = person.toLocaleLowerCase();
-    const items = store.items.filter((item) =>
+    const matchingItems = store.items.filter((item) =>
       item.status === "borrowed" &&
       typeof item.loan?.person === "string" &&
       item.loan.person.trim().toLocaleLowerCase() === personKey,
     );
-    if (items.length === 0) {
+    if (matchingItems.length === 0) {
       sendJson(response, 409, { error: "Esta persona ya no tiene implementos prestados." });
+      return;
+    }
+    const items = isAdmin
+      ? matchingItems
+      : matchingItems.filter((item) => item.loan.requestedBy === session.username);
+    if (items.length === 0) {
+      sendJson(response, 403, { error: "Solo quien solicitó estos implementos o un administrador puede devolverlos." });
       return;
     }
     for (const item of items) {
@@ -774,16 +799,26 @@ async function handleApi(request, response, pathname) {
         sendJson(response, 400, { error: "Indica quién recibe el implemento y el motivo del préstamo." });
         return;
       }
+      const requestedBy = resolveRequester(body, session, isAdmin);
+      if (!requestedBy) {
+        sendJson(response, 404, { error: "No se encontró la cuenta que solicita el préstamo." });
+        return;
+      }
       item.status = "borrowed";
       item.loan = {
         person,
         reason,
         checkedOutAt: new Date().toISOString(),
         checkedOutBy: session.username,
+        requestedBy,
       };
     } else if (action === "return") {
       if (item.status !== "borrowed") {
         sendJson(response, 409, { error: "El implemento no figura como prestado." });
+        return;
+      }
+      if (!isAdmin && item.loan?.requestedBy !== session.username) {
+        sendJson(response, 403, { error: "Solo quien solicitó este implemento o un administrador puede devolverlo." });
         return;
       }
       item.status = "available";

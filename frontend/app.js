@@ -188,6 +188,11 @@ function formatDateTime(isoString) {
   }).format(date);
 }
 
+function canReturnLoan(item) {
+  return appData.user?.role === "admin" ||
+    item.loan?.requestedBy === appData.user?.username;
+}
+
 function renderDashboard() {
   const items = appData.items;
   const available = items.filter((item) => item.status === "available").length;
@@ -211,22 +216,29 @@ function renderDashboard() {
   }
   const loanGroups = [...loansByPerson.values()];
   document.querySelector("#recent-loans").innerHTML = loanGroups.length
-    ? loanGroups.map((personItems) => `
-      <div class="loan-group">
-        <div class="loan-group-heading">
-          <div><span class="person-name">${escapeHtml(personItems[0].loan.person)}</span><span class="loan-date">${personItems.length} ${personItems.length === 1 ? "implemento en uso" : "implementos en uso"}</span></div>
-          <button class="small-action" type="button" data-action="return-all" data-count="${personItems.length}" data-person="${escapeHtml(personItems[0].loan.person)}">Devolver todos</button>
-        </div>
-        <div class="loan-group-items">${personItems.map((item) => `
-          <div class="loan-row">
-            <div><span class="loan-name">${escapeHtml(item.name)}</span>${item.code ? `<span class="loan-code">${escapeHtml(item.code)}</span>` : ""}</div>
-            <span class="loan-reason">${escapeHtml(item.loan.reason)}</span>
-            <span class="loan-date">Desde ${formatDateTime(item.loan.checkedOutAt)}</span>
-            <button class="small-action" type="button" data-action="return" data-id="${item.id}">Devolver</button>
+    ? loanGroups.map((personItems) => {
+      const returnableItems = personItems.filter(canReturnLoan);
+      return `
+        <div class="loan-group">
+          <div class="loan-group-heading">
+            <div><span class="person-name">${escapeHtml(personItems[0].loan.person)}</span><span class="loan-date">${personItems.length} ${personItems.length === 1 ? "implemento en uso" : "implementos en uso"}</span></div>
+            ${returnableItems.length
+              ? `<button class="small-action" type="button" data-action="return-all" data-count="${returnableItems.length}" data-person="${escapeHtml(personItems[0].loan.person)}">Devolver todos</button>`
+              : ""}
           </div>
-        `).join("")}</div>
-      </div>
-    `).join("")
+          <div class="loan-group-items">${personItems.map((item) => `
+            <div class="loan-row">
+              <div><span class="loan-name">${escapeHtml(item.name)}</span>${item.code ? `<span class="loan-code">${escapeHtml(item.code)}</span>` : ""}</div>
+              <span class="loan-reason">${escapeHtml(item.loan.reason)}</span>
+              <span class="loan-date">Desde ${formatDateTime(item.loan.checkedOutAt)}</span>
+              ${canReturnLoan(item)
+                ? `<button class="small-action" type="button" data-action="return" data-id="${item.id}">Devolver</button>`
+                : ""}
+            </div>
+          `).join("")}</div>
+        </div>
+      `;
+    }).join("")
     : '<div class="empty-inline">No hay préstamos activos por ahora.</div>';
 
   document.querySelector("#category-summary").innerHTML = appData.categories.length
@@ -285,7 +297,7 @@ function renderInventory() {
       : '<span class="muted">—</span>';
     let actions = '<span class="muted">—</span>';
     if (item.status === "borrowed") {
-      actions = `<button class="small-action" type="button" data-action="return" data-id="${item.id}">Devolver</button>${appData.user.role === "admin" ? `<button class="small-action danger" type="button" data-action="status" data-status="lost" data-id="${item.id}">Reportar pérdida</button>` : ""}`;
+      actions = `${canReturnLoan(item) ? `<button class="small-action" type="button" data-action="return" data-id="${item.id}">Devolver</button>` : ""}${appData.user.role === "admin" ? `<button class="small-action danger" type="button" data-action="status" data-status="lost" data-id="${item.id}">Reportar pérdida</button>` : ""}`;
     } else if (item.status === "available") {
       actions = `<button class="small-action" type="button" data-action="checkout" data-id="${item.id}">Prestar</button>${appData.user.role === "admin" ? `<button class="small-action" type="button" data-action="status" data-status="maintenance" data-id="${item.id}">Mantenimiento</button><button class="small-action danger" type="button" data-action="delete" data-id="${item.id}">Eliminar</button>` : ""}`;
     } else if (appData.user.role === "admin") {
@@ -354,6 +366,16 @@ function renderFilters() {
     `<option value="${category.id}">${escapeHtml(category.name)}</option>`,
   ).join("");
   document.querySelector("#item-dialog").querySelector('[type="submit"]').disabled = appData.categories.length === 0;
+
+  const requesterSelect = document.querySelector("#loan-requester");
+  requesterSelect.required = appData.user.role === "admin";
+  const selectedRequester = requesterSelect.value || appData.user.username;
+  requesterSelect.innerHTML = appData.users.map((user) =>
+    `<option value="${escapeHtml(user.username)}">${escapeHtml(user.username)} (${user.role === "admin" ? "Administrador" : "Personal"})</option>`,
+  ).join("");
+  requesterSelect.value = appData.users.some((user) => user.username === selectedRequester)
+    ? selectedRequester
+    : appData.user.username;
 }
 
 function render() {
@@ -561,12 +583,21 @@ document.querySelector("#loan-form").addEventListener("submit", async (event) =>
           ids: activeCheckoutIds,
           person: form.get("person"),
           reason: form.get("reason"),
+          requestedBy: appData.user.role === "admin"
+            ? form.get("requestedBy")
+            : appData.user.username,
         }),
       });
     } else {
       await api(`/api/items/${document.querySelector("#loan-item-id").value}/checkout`, {
         method: "PATCH",
-        body: JSON.stringify({ person: form.get("person"), reason: form.get("reason") }),
+        body: JSON.stringify({
+          person: form.get("person"),
+          reason: form.get("reason"),
+          requestedBy: appData.user.role === "admin"
+            ? form.get("requestedBy")
+            : appData.user.username,
+        }),
       });
     }
     const checkoutCount = activeCheckoutIds.length;
@@ -602,8 +633,9 @@ document.querySelector("#category-form").addEventListener("submit", async (event
 
 document.querySelector("#user-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
-  const submit = event.currentTarget.querySelector('[type="submit"]');
+  const userForm = event.currentTarget;
+  const form = new FormData(userForm);
+  const submit = userForm.querySelector('[type="submit"]');
   submit.disabled = true;
   hideError(document.querySelector("#user-error"));
   try {
@@ -615,7 +647,7 @@ document.querySelector("#user-form").addEventListener("submit", async (event) =>
         role: form.get("role"),
       }),
     });
-    event.currentTarget.reset();
+    userForm.reset();
     await refreshData();
     notify("Cuenta creada correctamente.");
   } catch (error) {
@@ -651,9 +683,10 @@ document.querySelector("#edit-user-form").addEventListener("submit", async (even
 
 document.querySelector("#password-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const passwordForm = event.currentTarget;
+  const form = new FormData(passwordForm);
   const newPassword = form.get("newPassword");
-  const submit = event.currentTarget.querySelector('[type="submit"]');
+  const submit = passwordForm.querySelector('[type="submit"]');
   hideError(document.querySelector("#password-error"));
   if (newPassword !== form.get("confirmNewPassword")) {
     showError(document.querySelector("#password-error"), "Las nuevas contraseñas no coinciden.");
@@ -669,7 +702,7 @@ document.querySelector("#password-form").addEventListener("submit", async (event
       }),
     });
     document.querySelector("#password-dialog").close();
-    event.currentTarget.reset();
+    passwordForm.reset();
     notify("Tu contraseña se actualizó correctamente.");
   } catch (error) {
     showError(document.querySelector("#password-error"), error.message);

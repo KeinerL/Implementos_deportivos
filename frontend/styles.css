@@ -32,7 +32,7 @@ button { cursor: pointer; }
 .muted, .auth-note { color: var(--muted); font-size: 14px; line-height: 1.6; }
 .auth-card > .muted { margin: 0 0 30px; }
 .form-stack, .dialog-form { display: flex; flex-direction: column; }
-.form-stack label, .dialog-form > label { margin: 15px 0 7px; color: #435d69; font-size: 12px; font-weight: 700; }
+.form-stack label, .dialog-form label { margin: 15px 0 7px; color: #435d69; font-size: 12px; font-weight: 700; }
 .form-stack input, .dialog-form input, .dialog-form select, .dialog-form textarea, .inline-form input { width: 100%; border: 1px solid #dfe7e9; border-radius: 8px; outline: 0; padding: 12px 13px; color: var(--ink); background: var(--white); transition: border-color .15s, box-shadow .15s; }
 .form-stack input:focus, .dialog-form input:focus, .dialog-form select:focus, .dialog-form textarea:focus, .inline-form input:focus, .filter-bar input:focus, .filter-bar select:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgb(20 134 120 / 10%); }
 .button { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid transparent; border-radius: 8px; padding: 10px 15px; font-size: 12px; font-weight: 700; transition: background .15s, transform .15s; }

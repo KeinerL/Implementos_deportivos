@@ -190,6 +190,11 @@
         <input id="loan-item-id" type="hidden">
         <label for="loan-person">¿Quién lo recibe?</label>
         <input id="loan-person" name="person" placeholder="Nombre de la persona" required maxlength="100">
+        <div id="loan-requester-field" class="admin-only hidden">
+          <label for="loan-requester">Cuenta que solicita el préstamo</label>
+          <select id="loan-requester" name="requestedBy" required></select>
+        </div>
+        <p class="field-hint">Solo la cuenta solicitante y los administradores podrán registrar la devolución.</p>
         <label for="loan-reason">Motivo del préstamo</label>
         <textarea id="loan-reason" name="reason" placeholder="Ej. Entrenamiento de fútbol" required maxlength="240" rows="3"></textarea>
         <p id="loan-error" class="form-error hidden" role="alert"></p>
