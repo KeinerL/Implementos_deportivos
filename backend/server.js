@@ -277,6 +277,39 @@ async function handleApi(request, response, pathname) {
     return;
   }
 
+  if (request.method === "POST" && pathname === "/api/register") {
+    const body = await readJson(request);
+    const username = cleanText(body.username, 40);
+    const password = typeof body.password === "string" ? body.password : "";
+    if (!/^[\p{L}\p{N}_.-]{3,40}$/u.test(username)) {
+      sendJson(response, 400, {
+        error: "El usuario debe tener entre 3 y 40 letras, números, puntos, guiones o guiones bajos.",
+      });
+      return;
+    }
+    if (password.length < 10 || password.length > 200) {
+      sendJson(response, 400, { error: "La contraseña debe tener entre 10 y 200 caracteres." });
+      return;
+    }
+    if (store.users.some((user) => user.username.toLocaleLowerCase() === username.toLocaleLowerCase())) {
+      sendJson(response, 409, { error: "Ya existe un usuario con ese nombre." });
+      return;
+    }
+    const credentials = await hashPassword(password);
+    if (store.users.some((user) => user.username.toLocaleLowerCase() === username.toLocaleLowerCase())) {
+      sendJson(response, 409, { error: "Ya existe un usuario con ese nombre." });
+      return;
+    }
+    const user = { username, role: "staff", ...credentials };
+    store.users.push(user);
+    await saveStore();
+    const token = randomBytes(32).toString("hex");
+    sessions.set(token, { username, expiresAt: Date.now() + SESSION_TTL_MS });
+    setSessionCookie(response, token);
+    sendJson(response, 201, { user: safeUser(user) });
+    return;
+  }
+
   if (request.method === "POST" && pathname === "/api/login") {
     const body = await readJson(request);
     const username = cleanText(body.username, 40);

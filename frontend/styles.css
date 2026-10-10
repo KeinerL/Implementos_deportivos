@@ -46,6 +46,8 @@ button { cursor: pointer; }
 .button:disabled { cursor: not-allowed; opacity: .55; }
 .button-wide { width: 100%; margin-top: 23px; }
 .auth-note { margin-top: 19px; font-size: 12px; }
+.auth-mode-toggle { display: block; margin: 16px auto 0; border: 0; padding: 5px; color: var(--teal-dark); background: transparent; font-size: 12px; font-weight: 700; }
+.auth-mode-toggle:hover { text-decoration: underline; }
 .form-error { margin: 10px 0 0; color: var(--red); font-size: 12px; line-height: 1.45; }
 .auth-aside { position: relative; display: flex; flex-direction: column; justify-content: center; overflow: hidden; padding: 12%; color: #f6fffc; background: var(--navy); }
 .auth-aside .eyebrow { color: #69d3bd; }

@@ -8,12 +8,14 @@ const authSubmit = document.querySelector("#auth-submit");
 const confirmPasswordField = document.querySelector("#confirm-password-field");
 const confirmPasswordInput = document.querySelector("#auth-confirm-password");
 const setupNote = document.querySelector("#setup-note");
+const authModeToggle = document.querySelector("#auth-mode-toggle");
 const toast = document.querySelector("#toast");
 const itemImageInput = document.querySelector("#item-image");
 const itemImagePreview = document.querySelector("#item-image-preview");
 const itemImagePreviewImage = document.querySelector("#item-image-preview-img");
 
 let setupRequired = false;
+let registrationMode = false;
 let appData = { user: null, categories: [], items: [], users: [] };
 let activeView = "dashboard";
 let toastTimer;
@@ -87,19 +89,34 @@ function notify(message, isError = false) {
   toastTimer = setTimeout(() => toast.classList.remove("visible"), 3000);
 }
 
-function setAuthMode(isSetup) {
+function setAuthMode(isSetup, isRegistration = false) {
   setupRequired = isSetup;
-  authTitle.textContent = isSetup ? "Crea tu cuenta de encargado" : "Bienvenido de nuevo";
+  registrationMode = !isSetup && isRegistration;
+  const creatingAccount = isSetup || registrationMode;
+  authTitle.textContent = isSetup
+    ? "Crea tu cuenta de encargado"
+    : registrationMode ? "Crea tu cuenta" : "Bienvenido de nuevo";
   authDescription.textContent = isSetup
     ? "Configura la cuenta que administrará el inventario."
-    : "Inicia sesión para administrar los implementos deportivos.";
-  authSubmit.textContent = isSetup ? "Crear cuenta y continuar" : "Iniciar sesión";
-  confirmPasswordField.classList.toggle("hidden", !isSetup);
-  confirmPasswordInput.required = isSetup;
-  setupNote.classList.toggle("hidden", !isSetup);
+    : registrationMode
+      ? "Regístrate para consultar el inventario y gestionar préstamos."
+      : "Inicia sesión para administrar los implementos deportivos.";
+  authSubmit.textContent = isSetup
+    ? "Crear cuenta y continuar"
+    : registrationMode ? "Crear cuenta" : "Iniciar sesión";
+  confirmPasswordField.classList.toggle("hidden", !creatingAccount);
+  confirmPasswordInput.required = creatingAccount;
+  setupNote.textContent = isSetup
+    ? "Crea la cuenta del encargado principal. El registro público se cerrará después de este paso."
+    : "Tu cuenta tendrá permisos de personal. Un administrador puede cambiar tu rol.";
+  setupNote.classList.toggle("hidden", !creatingAccount);
+  authModeToggle.classList.toggle("hidden", isSetup);
+  authModeToggle.textContent = registrationMode
+    ? "¿Ya tienes cuenta? Iniciar sesión"
+    : "¿No tienes cuenta? Crear cuenta";
   document.querySelector("#auth-password").setAttribute(
     "autocomplete",
-    isSetup ? "new-password" : "current-password",
+    creatingAccount ? "new-password" : "current-password",
   );
   hideError(authError);
 }
@@ -450,22 +467,30 @@ authForm.addEventListener("submit", async (event) => {
   hideError(authError);
   const username = document.querySelector("#auth-username").value.trim();
   const password = document.querySelector("#auth-password").value;
-  if (setupRequired && password !== confirmPasswordInput.value) {
+  const creatingAccount = setupRequired || registrationMode;
+  if (creatingAccount && password !== confirmPasswordInput.value) {
     showError(authError, "Las contraseñas no coinciden.");
     return;
   }
   authSubmit.disabled = true;
   try {
-    await api(setupRequired ? "/api/setup" : "/api/login", {
+    await api(setupRequired ? "/api/setup" : registrationMode ? "/api/register" : "/api/login", {
       method: "POST",
       body: JSON.stringify({ username, password }),
     });
+    if (creatingAccount) setAuthMode(false);
     showApp();
   } catch (error) {
     showError(authError, error.message);
   } finally {
     authSubmit.disabled = false;
   }
+});
+
+authModeToggle.addEventListener("click", () => {
+  authForm.reset();
+  setAuthMode(false, !registrationMode);
+  document.querySelector("#auth-username").focus();
 });
 
 document.querySelector("#item-form").addEventListener("submit", async (event) => {
