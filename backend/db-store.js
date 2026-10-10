@@ -35,38 +35,50 @@ async function loadStoreFromDatabase() {
   };
 }
 
+
 async function saveStoreToDatabase(store) {
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
-    // Borramos primero los registros dependientes.
-    await client.query("DELETE FROM items");
-    await client.query("DELETE FROM categories");
-    await client.query("DELETE FROM users");
-
-    for (const user of store.users) {
-      await client.query(
-        `INSERT INTO users (username, role, salt, hash)
-         VALUES ($1, $2, $3, $4)`,
-        [user.username, user.role, user.salt, user.hash]
-      );
-    }
-
+    // 1. Insertar o actualizar categorías.
     for (const category of store.categories) {
       await client.query(
         `INSERT INTO categories (id, name)
-         VALUES ($1, $2)`,
+         VALUES ($1, $2)
+         ON CONFLICT (id) DO UPDATE
+         SET name = EXCLUDED.name`,
         [category.id, category.name]
       );
     }
 
+    // 2. Insertar o actualizar usuarios.
+    for (const user of store.users) {
+      await client.query(
+        `INSERT INTO users (username, role, salt, hash)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (username) DO UPDATE
+         SET role = EXCLUDED.role,
+             salt = EXCLUDED.salt,
+             hash = EXCLUDED.hash`,
+        [user.username, user.role, user.salt, user.hash]
+      );
+    }
+
+    // 3. Insertar o actualizar implementos.
     for (const item of store.items) {
       await client.query(
         `INSERT INTO items
           (id, name, code, category_id, status, loan, image_url)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (id) DO UPDATE
+         SET name = EXCLUDED.name,
+             code = EXCLUDED.code,
+             category_id = EXCLUDED.category_id,
+             status = EXCLUDED.status,
+             loan = EXCLUDED.loan,
+             image_url = EXCLUDED.image_url`,
         [
           item.id,
           item.name,
@@ -78,6 +90,27 @@ async function saveStoreToDatabase(store) {
         ]
       );
     }
+
+    // 4. Eliminar solo implementos que ya no existen.
+    await client.query(
+      `DELETE FROM items
+       WHERE NOT (id = ANY($1::uuid[]))`,
+      [store.items.map((item) => item.id)]
+    );
+
+    // 5. Eliminar solo categorías que ya no existen.
+    await client.query(
+      `DELETE FROM categories
+       WHERE NOT (id = ANY($1::uuid[]))`,
+      [store.categories.map((category) => category.id)]
+    );
+
+    // 6. Eliminar solo usuarios que ya no existen.
+    await client.query(
+      `DELETE FROM users
+       WHERE NOT (username = ANY($1::text[]))`,
+      [store.users.map((user) => user.username)]
+    );
 
     await client.query("COMMIT");
   } catch (error) {

@@ -2,6 +2,14 @@ const {
   loadStoreFromDatabase,
   saveStoreToDatabase,
 } = require("./db-store");
+const { v2: cloudinary } = require("cloudinary");
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+  secure: true,
+});
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -545,13 +553,19 @@ async function handleApi(request, response, pathname) {
       sendJson(response, 409, { error: "Uno o más códigos ya existen en el inventario." });
       return;
     }
-    const image = body.image ? decodeProductImage(body.image) : null;
-    const imagePath = image ? `/api/images/${randomUUID()}.${image.extension}` : "";
-    if (image) {
-      await fs.promises.mkdir(IMAGE_DIR, { recursive: true });
-      await fs.promises.writeFile(path.join(IMAGE_DIR, path.basename(imagePath)), image.contents, {
-        flag: "wx",
+
+    let imageUrl = "";
+
+    if (body.image) {
+      // Validar formato y tamaño antes de subir.
+      decodeProductImage(body.image);
+
+      const result = await cloudinary.uploader.upload(body.image, {
+        folder: "sport-control/items",
+        resource_type: "image",
       });
+
+      imageUrl = result.secure_url;
     }
     const items = codes.map((itemCode) => ({
       id: randomUUID(),
@@ -560,7 +574,7 @@ async function handleApi(request, response, pathname) {
       categoryId: category.id,
       status: "available",
       loan: null,
-      ...(imagePath ? { image: imagePath } : {}),
+      ...(imageUrl ? { image: imageUrl } : {}),
     }));
     store.items.push(...items);
     await saveStore();
